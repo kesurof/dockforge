@@ -12,6 +12,11 @@ apps-local/
 apps-enabled/
 backups/
 logs/
+proxy/
+serverbox/
+stacks/
+*.db
+acme.json
 
 # OS
 .DS_Store

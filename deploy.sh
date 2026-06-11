@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================
 # KSF — Déploiement infrastructure
-# Réseau, Traefik, OAuth2 Proxy
+# Réseau, Traefik, OAuth2 Proxy, CrowdSec
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -40,11 +40,14 @@ OAUTH2_EMAIL_DOMAINS=""
 OAUTH2_AUTHENTICATED_EMAILS_FILE=""
 OAUTH2_HOST=""
 OAUTH2_COOKIE_SECRET=""
+CROWDSEC_BOUNCER_KEY=""
 TRAEFIK_START_STATUS="inactif"
 OAUTH2_START_STATUS="inactif"
+CROWDSEC_START_STATUS="inactif"
 CONFIG_LOADED=false
 NETWORK_NAME_SET=false
 TZ_VALUE_SET=false
+WITH_CROWDSEC=false
 
 usage() {
   cat <<EOF
@@ -64,6 +67,8 @@ Options:
   --dns-provider NAME     Fournisseur DNS applicatif (défaut: cloudflare)
   --traefik-host HOST     Hostname Traefik (défaut: traefik.<DOMAIN>)
   --with-traefik          Génère une stack Traefik
+  --with-crowdsec         Génère CrowdSec et le middleware Traefik bouncer
+  --crowdsec-bouncer-key KEY  Clé bouncer Traefik CrowdSec (générée si absente)
   --oauth-client-id ID    GitHub OAuth Client ID
   --oauth-client-secret SEC  GitHub OAuth Client Secret
   --oauth-allowed-email EMAILS  Emails GitHub autorisés, séparés par virgule (recommandé)
@@ -93,6 +98,8 @@ while [[ $# -gt 0 ]]; do
     --dns-provider)    DNS_PROVIDER="$2"; shift 2 ;;
     --traefik-host)   TRAEFIK_HOST="$2"; shift 2 ;;
     --with-traefik)   WITH_TRAEFIK=true; shift ;;
+    --with-crowdsec)  WITH_CROWDSEC=true; WITH_TRAEFIK=true; shift ;;
+    --crowdsec-bouncer-key) CROWDSEC_BOUNCER_KEY="$2"; WITH_CROWDSEC=true; WITH_TRAEFIK=true; shift 2 ;;
     --oauth-client-id)    OAUTH2_CLIENT_ID="$2"; OAUTH2_ENABLED=true; shift 2 ;;
     --oauth-client-secret) OAUTH2_CLIENT_SECRET="$2"; OAUTH2_ENABLED=true; shift 2 ;;
     --oauth-allowed-email) OAUTH2_ALLOWED_EMAILS="${OAUTH2_ALLOWED_EMAILS:+${OAUTH2_ALLOWED_EMAILS},}$2"; OAUTH2_ENABLED=true; shift 2 ;;
@@ -161,6 +168,12 @@ load_existing_deploy_config() {
         ;;
       TRAEFIK_HOST)
         [ -z "${TRAEFIK_HOST}" ] && TRAEFIK_HOST="${value}"
+        ;;
+      WITH_CROWDSEC)
+        [ "${WITH_CROWDSEC}" = false ] && WITH_CROWDSEC="${value}"
+        ;;
+      CROWDSEC_BOUNCER_KEY)
+        [ -z "${CROWDSEC_BOUNCER_KEY}" ] && CROWDSEC_BOUNCER_KEY="${value}"
         ;;
       OAUTH2_ENABLED)
         [ "${OAUTH2_ENABLED}" = false ] && OAUTH2_ENABLED="${value}"
@@ -263,6 +276,16 @@ display_secret() {
     printf 'renseigné (masqué)'
   else
     printf 'non renseigné'
+  fi
+}
+
+display_secret_auto() {
+  local value="${1:-}"
+
+  if [ -n "$value" ]; then
+    printf 'renseigné (masqué)'
+  else
+    printf 'généré automatiquement'
   fi
 }
 
@@ -501,6 +524,9 @@ prompt_deploy_questions() {
     ask_secret OAUTH2_CLIENT_SECRET "GitHub OAuth Client Secret"
     ask_text OAUTH2_ALLOWED_EMAILS "Emails GitHub autorisés, séparés par virgule"
   fi
+
+  section_title "6. CrowdSec"
+  ask_bool WITH_CROWDSEC "Activer CrowdSec pour Traefik"
 }
 
 show_deploy_plan() {
@@ -521,6 +547,12 @@ show_deploy_plan() {
   echo "Traefik              : $(display_bool "${WITH_TRAEFIK}")"
   echo "Host Traefik         : $(display_value "${TRAEFIK_HOST}")"
   echo "Let's Encrypt email  : $(display_value "${ACME_EMAIL}")"
+  echo "CrowdSec             : $(display_bool "${WITH_CROWDSEC}")"
+  if [ "${WITH_CROWDSEC}" = true ]; then
+    echo "CrowdSec bouncer key : $(display_secret_auto "${CROWDSEC_BOUNCER_KEY}")"
+  else
+    echo "CrowdSec bouncer key : $(display_secret "${CROWDSEC_BOUNCER_KEY}")"
+  fi
   echo "OAuth2 Proxy         : $(display_bool "${OAUTH2_ENABLED}")"
   echo "Host OAuth2          : $(display_value "${OAUTH2_HOST}")"
   echo "OAuth2 client ID     : $(display_presence "${OAUTH2_CLIENT_ID}")"
@@ -537,10 +569,12 @@ show_deploy_plan() {
   if [ "$DRY_RUN" = true ]; then
     echo "  [DRY-RUN] Simuler la configuration et les stacks sans écrire dans le runtime"
     [ "$WITH_TRAEFIK" = true ] && echo "  [DRY-RUN] Simuler le démarrage de Traefik"
+    [ "$WITH_CROWDSEC" = true ] && echo "  [DRY-RUN] Simuler le démarrage de CrowdSec"
     [ "$OAUTH2_ENABLED" = true ] && echo "  [DRY-RUN] Simuler le démarrage de OAuth2 Proxy"
   else
     echo "  Générer la configuration et les stacks"
     [ "$WITH_TRAEFIK" = true ] && echo "  Démarrer Traefik automatiquement"
+    [ "$WITH_CROWDSEC" = true ] && echo "  Démarrer CrowdSec automatiquement"
     [ "$OAUTH2_ENABLED" = true ] && echo "  Démarrer OAuth2 Proxy automatiquement après Traefik"
   fi
   return 0
@@ -613,6 +647,16 @@ generate_oauth2_cookie_secret() {
   fi
 }
 
+generate_crowdsec_bouncer_key() {
+  if [ "$WITH_CROWDSEC" = true ] && [ -z "$CROWDSEC_BOUNCER_KEY" ]; then
+    if ! command -v openssl >/dev/null 2>&1; then
+      err "openssl est requis pour générer --crowdsec-bouncer-key."
+      exit 1
+    fi
+    CROWDSEC_BOUNCER_KEY=$(openssl rand -hex 32)
+  fi
+}
+
 validate_deploy_config() {
   if [ -z "$DOMAIN" ]; then
     err "Le domaine principal est requis."
@@ -623,8 +667,13 @@ validate_deploy_config() {
     return 1
   fi
 
-  if [ "$WITH_TRAEFIK" = false ] && [ "$OAUTH2_ENABLED" = false ]; then
-    err "Aucune stack sélectionnée. Utilise --with-traefik ou les options OAuth2."
+  if [ "$WITH_TRAEFIK" = false ] && [ "$OAUTH2_ENABLED" = false ] && [ "$WITH_CROWDSEC" = false ]; then
+    err "Aucune stack sélectionnée. Utilise --with-traefik, --with-crowdsec ou les options OAuth2."
+    return 1
+  fi
+
+  if [ "$WITH_CROWDSEC" = true ] && [ "$WITH_TRAEFIK" = false ]; then
+    err "CrowdSec nécessite --with-traefik pour générer le middleware Traefik."
     return 1
   fi
 
@@ -718,6 +767,7 @@ fi
 validate_execution_allowed
 validate_deploy_config
 generate_oauth2_cookie_secret
+generate_crowdsec_bouncer_key
 
 # ---------- Journalisation ----------
 if [ "$DRY_RUN" = true ]; then
@@ -751,6 +801,8 @@ DNS_PROVIDER=${DNS_PROVIDER}
 DNS_RECORD_TTL=${DNS_RECORD_TTL}
 DNS_RECORD_PROXIED=${DNS_RECORD_PROXIED}
 WITH_TRAEFIK=${WITH_TRAEFIK}
+WITH_CROWDSEC=${WITH_CROWDSEC}
+CROWDSEC_BOUNCER_KEY=${CROWDSEC_BOUNCER_KEY}
 OAUTH2_ENABLED=${OAUTH2_ENABLED}
 ACME_EMAIL=${ACME_EMAIL}
 TRAEFIK_HOST=${TRAEFIK_HOST}
@@ -786,11 +838,15 @@ if [ "$OAUTH2_ENABLED" = true ]; then
     warn "OAuth2 autorisation : username GitHub avancé avec OAUTH2_PROXY_GITHUB_USERS. Le mode email recommandé limite l'accès applicatif via allowed-emails.txt."
   fi
 fi
+if [ "$WITH_CROWDSEC" = true ]; then
+  info "CrowdSec: activé pour Traefik"
+fi
 
 step_dirs
 step_env
 step_network
 step_traefik
+step_crowdsec
 step_oauth2
 step_start_infrastructure
 
@@ -814,6 +870,7 @@ echo "IP publique DNS  : $(display_value "${SERVER_PUBLIC_IP}")"
 echo ""
 echo "Traefik          : $(display_bool "${WITH_TRAEFIK}")"
 echo "Host Traefik     : $(display_value "${TRAEFIK_HOST}")"
+echo "CrowdSec         : $(display_bool "${WITH_CROWDSEC}")"
 echo "OAuth2 Proxy     : $(display_bool "${OAUTH2_ENABLED}")"
 echo "Host OAuth2      : $(display_value "${OAUTH2_HOST}")"
 if [ "$OAUTH2_AUTH_MODE" = "email" ]; then
@@ -822,6 +879,7 @@ fi
 echo ""
 echo "Containers démarrés :"
 echo "  Traefik      : ${TRAEFIK_START_STATUS}"
+echo "  CrowdSec     : ${CROWDSEC_START_STATUS}"
 echo "  OAuth2 Proxy : ${OAUTH2_START_STATUS}"
 echo ""
 if [ "$DRY_RUN" = true ]; then

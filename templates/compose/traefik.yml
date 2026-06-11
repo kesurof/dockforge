@@ -20,6 +20,7 @@ services:
       - "./traefik.yml:/traefik.yml:ro"
       - "./dynamic:/dynamic:ro"
       - "./acme:/acme"
+      - "./logs:/logs"
 
 networks:
   proxy:

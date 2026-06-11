@@ -393,7 +393,7 @@ app_install() {
     fi
     local dynamic_dir="${BASE_DIR}/proxy/traefik/dynamic"
     run mkdir -p "${dynamic_dir}"
-    render_template "${app_template_dir}/${route_tpl}" "${dynamic_dir}/route-${app_name}.yml"
+    render_traefik_route_template "${app_template_dir}/${route_tpl}" "${dynamic_dir}/route-${app_name}.yml"
     ok "Route Traefik générée pour ${app_name} (${APP_HOST})"
   fi
 

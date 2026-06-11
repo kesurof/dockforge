@@ -1,6 +1,10 @@
 api:
   dashboard: true
 
+accessLog:
+  filePath: /logs/access.log
+  format: json
+
 entryPoints:
   web:
     address: ":80"

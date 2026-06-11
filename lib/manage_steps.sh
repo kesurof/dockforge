@@ -9,6 +9,7 @@ _manage_setup_paths() {
   TRAEFIK_DYNAMIC_DIR="${BASE_DIR}/proxy/traefik/dynamic"
   TRAEFIK_DIR="${BASE_DIR}/proxy/traefik"
   OAUTH2_DIR="${BASE_DIR}/proxy/oauth2-proxy"
+  CROWDSEC_DIR="${BASE_DIR}/proxy/crowdsec"
 }
 
 # ---------- Vérification installation ----------
@@ -25,6 +26,7 @@ manage_require_installation() {
   _manage_setup_paths
   : "${WITH_TRAEFIK:=false}"
   : "${OAUTH2_ENABLED:=false}"
+  : "${WITH_CROWDSEC:=false}"
   : "${DNS_AUTO_CREATE:=false}"
   : "${NETWORK_NAME:=proxy}"
   : "${TZ_VALUE:=Europe/Paris}"
@@ -70,6 +72,16 @@ manage_status() {
     info "OAuth2   : non configuré"
   fi
 
+  if [ "${WITH_CROWDSEC}" = true ]; then
+    if [ -f "${CROWDSEC_DIR}/docker-compose.yml" ]; then
+      ok "CrowdSec : configuré, stack présente"
+    else
+      warn "CrowdSec : configuré mais stack absente"
+    fi
+  else
+    info "CrowdSec : non configuré"
+  fi
+
   if [ -f "${INSTALLED_DIR}/dockge.env" ]; then
     ok "Dockge   : installé"
   else
@@ -103,6 +115,7 @@ manage_status() {
     local names=""
     names="$names${TRAEFIK_HOST:+ traefik}"
     names="$names${OAUTH2_HOST:+ oauth2-proxy}"
+    [ "${WITH_CROWDSEC}" = true ] && names="$names crowdsec"
     for f in "${INSTALLED_DIR}"/*.env; do
       [ -f "$f" ] || continue
       source "$f"
@@ -156,6 +169,10 @@ manage_config() {
 
 _manage_route_has_oauth2() {
   grep -q 'oauth2-chain' "$1" 2>/dev/null
+}
+
+_manage_route_has_crowdsec() {
+  grep -q 'security-chain\|crowdsec' "$1" 2>/dev/null
 }
 
 _manage_route_has_placeholder() {
@@ -224,7 +241,11 @@ manage_routes() {
         elif [ "$filename" != "route-traefik.yml" ]; then
           extra=" (anomalie: route orpheline)"
         fi
-        ok "  ${filename}  (protégée)${extra}  ${host:+→ ${host}}"
+        if _manage_route_has_crowdsec "$file"; then
+          ok "  ${filename}  (protégée, CrowdSec)${extra}  ${host:+→ ${host}}"
+        else
+          ok "  ${filename}  (protégée)${extra}  ${host:+→ ${host}}"
+        fi
         ;;
       publique)
         if [ -f "$app_env" ]; then
@@ -235,7 +256,11 @@ manage_routes() {
         elif [ "$filename" != "route-traefik.yml" ]; then
           extra=" (anomalie: route orpheline)"
         fi
-        info "  ${filename}  (publique)${extra}  ${host:+→ ${host}}"
+        if _manage_route_has_crowdsec "$file"; then
+          info "  ${filename}  (publique, CrowdSec)${extra}  ${host:+→ ${host}}"
+        else
+          info "  ${filename}  (publique)${extra}  ${host:+→ ${host}}"
+        fi
         ;;
       proxy-oauth2)
         ok "  ${filename}  (proxy OAuth2)  ${host:+→ ${host}}"
@@ -271,13 +296,18 @@ manage_protect() {
   fi
 
   echo "${dry_run_prefix}Régénération du middleware OAuth2..."
-  render_template "$middleware_tpl" "${TRAEFIK_DYNAMIC_DIR}/middleware-oauth2.yml"
+  render_oauth2_middleware_template "$middleware_tpl" "${TRAEFIK_DYNAMIC_DIR}/middleware-oauth2.yml"
+
+  if [ "${WITH_CROWDSEC}" = true ]; then
+    echo "${dry_run_prefix}Régénération du middleware CrowdSec..."
+    render_template "${TEMPLATE_DIR}/traefik/middleware-crowdsec.yml" "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml"
+  fi
 
   if [ "${WITH_TRAEFIK}" = true ]; then
     local route_traefik_tpl="${TEMPLATE_DIR}/traefik/route-traefik-oauth2.yml"
     if [ -f "$route_traefik_tpl" ]; then
       echo "${dry_run_prefix}Protection de la route Traefik..."
-      render_template "$route_traefik_tpl" "${TRAEFIK_DYNAMIC_DIR}/route-traefik.yml"
+      render_traefik_route_template "$route_traefik_tpl" "${TRAEFIK_DYNAMIC_DIR}/route-traefik.yml"
     fi
   fi
 
@@ -291,7 +321,7 @@ manage_protect() {
       local route_tpl="${app_tpl_dir}/route-oauth2.yml"
       if [ -f "$route_tpl" ]; then
         echo "${dry_run_prefix}Protection de la route ${APP_NAME}..."
-        render_template "$route_tpl" "${TRAEFIK_DYNAMIC_DIR}/route-${APP_NAME}.yml"
+        render_traefik_route_template "$route_tpl" "${TRAEFIK_DYNAMIC_DIR}/route-${APP_NAME}.yml"
         ((count++)) || true
       else
         warn "Template route-oauth2 introuvable pour ${APP_NAME}"
@@ -325,16 +355,27 @@ manage_render() {
 
     if [ "${OAUTH2_ENABLED}" = true ]; then
       echo "${dry_run_prefix}Rendu de route-traefik.yml (avec OAuth2)..."
-      render_template "${TEMPLATE_DIR}/traefik/route-traefik-oauth2.yml" "${TRAEFIK_DYNAMIC_DIR}/route-traefik.yml"
+      render_traefik_route_template "${TEMPLATE_DIR}/traefik/route-traefik-oauth2.yml" "${TRAEFIK_DYNAMIC_DIR}/route-traefik.yml"
     else
       echo "${dry_run_prefix}Rendu de route-traefik.yml (sans OAuth2)..."
-      render_template "${TEMPLATE_DIR}/traefik/route-traefik.yml" "${TRAEFIK_DYNAMIC_DIR}/route-traefik.yml"
+      render_traefik_route_template "${TEMPLATE_DIR}/traefik/route-traefik.yml" "${TRAEFIK_DYNAMIC_DIR}/route-traefik.yml"
+    fi
+  fi
+
+  if [ "${WITH_CROWDSEC}" = true ]; then
+    echo "${dry_run_prefix}Rendu de middleware-crowdsec.yml..."
+    render_template "${TEMPLATE_DIR}/traefik/middleware-crowdsec.yml" "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml"
+  elif [ -f "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml" ]; then
+    if [ "${DRY_RUN:-false}" = true ]; then
+      warn "[DRY-RUN] Suppression de ${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml"
+    else
+      rm -f "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml"
     fi
   fi
 
   if [ "${OAUTH2_ENABLED}" = true ]; then
     echo "${dry_run_prefix}Rendu de middleware-oauth2.yml..."
-    render_template "${TEMPLATE_DIR}/traefik/middleware-oauth2.yml" "${TRAEFIK_DYNAMIC_DIR}/middleware-oauth2.yml"
+    render_oauth2_middleware_template "${TEMPLATE_DIR}/traefik/middleware-oauth2.yml" "${TRAEFIK_DYNAMIC_DIR}/middleware-oauth2.yml"
 
     echo "${dry_run_prefix}Rendu de route-oauth2-proxy.yml..."
     render_template "${TEMPLATE_DIR}/traefik/route-oauth2-proxy.yml" "${TRAEFIK_DYNAMIC_DIR}/route-oauth2-proxy.yml"
@@ -351,10 +392,10 @@ manage_render() {
     local route_dest="${TRAEFIK_DYNAMIC_DIR}/route-${APP_NAME}.yml"
     if [ "${APP_AUTH:-false}" = true ] && [ -f "${app_tpl_dir}/route-oauth2.yml" ]; then
       echo "${dry_run_prefix}Rendu de route-${APP_NAME}.yml (protégée)..."
-      render_template "${app_tpl_dir}/route-oauth2.yml" "$route_dest"
+      render_traefik_route_template "${app_tpl_dir}/route-oauth2.yml" "$route_dest"
     elif [ -f "${app_tpl_dir}/route.yml" ]; then
       echo "${dry_run_prefix}Rendu de route-${APP_NAME}.yml (publique)..."
-      render_template "${app_tpl_dir}/route.yml" "$route_dest"
+      render_traefik_route_template "${app_tpl_dir}/route.yml" "$route_dest"
     fi
     ((count++)) || true
   done
@@ -378,6 +419,16 @@ manage_restart() {
   fi
 
   local restarted=false
+
+  if [ "${WITH_CROWDSEC}" = true ] && [ -f "${CROWDSEC_DIR}/docker-compose.yml" ]; then
+    info "Redémarrage de CrowdSec..."
+    if [ "${DRY_RUN:-false}" = true ]; then
+      warn "[DRY-RUN] cd ${CROWDSEC_DIR} && docker compose up -d"
+    else
+      (cd "${CROWDSEC_DIR}" && docker compose up -d) || warn "Échec du redémarrage de CrowdSec."
+    fi
+    restarted=true
+  fi
 
   if [ -f "${TRAEFIK_DIR}/docker-compose.yml" ]; then
     info "Redémarrage de Traefik..."
@@ -521,6 +572,86 @@ manage_clean_data() {
   ok "Données supprimées : ${target}"
 }
 
+# ---------- CrowdSec ----------
+
+manage_crowdsec_require() {
+  manage_require_installation
+
+  if [ "${WITH_CROWDSEC}" != true ]; then
+    err "CrowdSec n'est pas activé dans ${BASE_DIR}/config/ksf.env."
+    exit 1
+  fi
+  if [ ! -f "${CROWDSEC_DIR}/docker-compose.yml" ]; then
+    err "Stack CrowdSec absente : ${CROWDSEC_DIR}/docker-compose.yml"
+    exit 1
+  fi
+}
+
+manage_crowdsec_status() {
+  manage_crowdsec_require
+
+  echo "=== CrowdSec ==="
+  echo "Stack   : ${CROWDSEC_DIR}"
+  echo "Config  : ${CROWDSEC_DIR}/config"
+  echo "Data    : ${CROWDSEC_DIR}/data"
+  echo "Logs    : ${TRAEFIK_DIR}/logs/access.log"
+  echo ""
+
+  if ! command -v docker >/dev/null 2>&1; then
+    warn "Docker inaccessible, état container indisponible."
+    return 0
+  fi
+
+  (cd "${CROWDSEC_DIR}" && docker compose ps) || warn "Impossible de lire l'état Compose de CrowdSec."
+}
+
+manage_crowdsec_logs() {
+  manage_crowdsec_require
+
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] cd ${CROWDSEC_DIR} && docker compose logs --tail=200 crowdsec"
+    return 0
+  fi
+  (cd "${CROWDSEC_DIR}" && docker compose logs --tail=200 crowdsec) || err "Impossible de lire les logs CrowdSec."
+}
+
+manage_crowdsec_decisions() {
+  manage_crowdsec_require
+
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] cd ${CROWDSEC_DIR} && docker compose exec -T crowdsec cscli decisions list"
+    return 0
+  fi
+  (cd "${CROWDSEC_DIR}" && docker compose exec -T crowdsec cscli decisions list) || err "Impossible de lire les décisions CrowdSec."
+}
+
+manage_crowdsec_restart() {
+  manage_crowdsec_require
+
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] cd ${CROWDSEC_DIR} && docker compose up -d"
+    return 0
+  fi
+  (cd "${CROWDSEC_DIR}" && docker compose up -d) || err "Échec du redémarrage de CrowdSec."
+  ok "CrowdSec redémarré."
+}
+
+manage_crowdsec() {
+  local subcommand="${1:-}"
+
+  case "$subcommand" in
+    status) manage_crowdsec_status ;;
+    logs) manage_crowdsec_logs ;;
+    decisions) manage_crowdsec_decisions ;;
+    restart) manage_crowdsec_restart ;;
+    *)
+      err "Commande CrowdSec inconnue : ${subcommand:-<vide>}"
+      err "Commandes disponibles : status, logs, decisions, restart"
+      exit 1
+      ;;
+  esac
+}
+
 # ---------- Doctor ----------
 
 _manage_check() {
@@ -594,6 +725,14 @@ manage_doctor() {
       ((errors++)) || true
     fi
   fi
+  if [ "${WITH_CROWDSEC}" = true ]; then
+    if [ -f "${CROWDSEC_DIR}/docker-compose.yml" ]; then
+      _manage_check ok "Stack CrowdSec" "docker-compose.yml présent"
+    else
+      _manage_check err "Stack CrowdSec" "docker-compose.yml absent"
+      ((errors++)) || true
+    fi
+  fi
 
   # 5. Docker
   if command -v docker >/dev/null 2>&1; then
@@ -627,6 +766,22 @@ manage_doctor() {
           ((warnings++)) || true
         fi
       fi
+
+      # 5d. Container CrowdSec et réseau partagé
+      if [ "${WITH_CROWDSEC}" = true ] && [ -f "${CROWDSEC_DIR}/docker-compose.yml" ]; then
+        if docker ps --filter "name=crowdsec$" --format "{{.Names}}" 2>/dev/null | grep -q "crowdsec"; then
+          _manage_check ok "Container CrowdSec" "Actif"
+          if docker inspect crowdsec --format '{{json .NetworkSettings.Networks}}' 2>/dev/null | grep -q "\"${NETWORK_NAME}\""; then
+            _manage_check ok "Réseau CrowdSec" "Connecté à ${NETWORK_NAME}"
+          else
+            _manage_check err "Réseau CrowdSec" "Non connecté à ${NETWORK_NAME}"
+            ((errors++)) || true
+          fi
+        else
+          _manage_check warn "Container CrowdSec" "Arrêté ou absent"
+          ((warnings++)) || true
+        fi
+      fi
     else
       _manage_check warn "Docker" "Installé mais inaccessible pour cet utilisateur"
       ((warnings++)) || true
@@ -642,6 +797,37 @@ manage_doctor() {
       _manage_check ok "Middleware OAuth2" "Présent"
     else
       _manage_check err "Middleware OAuth2" "Absent (lancer: ./ksf.sh render)"
+      ((errors++)) || true
+    fi
+  fi
+  if [ "${WITH_CROWDSEC}" = true ]; then
+    if [ -f "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml" ]; then
+      _manage_check ok "Middleware CrowdSec" "Présent"
+    else
+      _manage_check err "Middleware CrowdSec" "Absent (lancer: ./ksf.sh render)"
+      ((errors++)) || true
+    fi
+    if [ -f "${TRAEFIK_DIR}/logs/access.log" ]; then
+      if [ -r "${TRAEFIK_DIR}/logs/access.log" ]; then
+        _manage_check ok "Access log Traefik" "Présent et lisible"
+      else
+        _manage_check err "Access log Traefik" "Présent mais illisible"
+        ((errors++)) || true
+      fi
+    else
+      _manage_check err "Access log Traefik" "Absent (${TRAEFIK_DIR}/logs/access.log)"
+      ((errors++)) || true
+    fi
+    if [ -f "${CROWDSEC_DIR}/acquis.yml" ] && grep -q '/var/log/traefik/access.log' "${CROWDSEC_DIR}/acquis.yml" 2>/dev/null; then
+      _manage_check ok "Acquisition CrowdSec" "Traefik access.log configuré"
+    else
+      _manage_check err "Acquisition CrowdSec" "acquis.yml absent ou incomplet"
+      ((errors++)) || true
+    fi
+    if [ -n "${CROWDSEC_BOUNCER_KEY:-}" ]; then
+      _manage_check ok "Clé bouncer CrowdSec" "Présente dans ksf.env local"
+    else
+      _manage_check err "Clé bouncer CrowdSec" "Absente de ksf.env"
       ((errors++)) || true
     fi
   fi

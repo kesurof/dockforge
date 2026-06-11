@@ -62,20 +62,43 @@ step_traefik() {
   fi
 
   TRAEFIK_DIR="${BASE_DIR}/proxy/traefik"
-  run mkdir -p "${TRAEFIK_DIR}/dynamic" "${TRAEFIK_DIR}/acme"
+  run mkdir -p "${TRAEFIK_DIR}/dynamic" "${TRAEFIK_DIR}/acme" "${TRAEFIK_DIR}/logs"
 
   render_template "${TEMPLATE_DIR}/compose/traefik.yml" "${TRAEFIK_DIR}/docker-compose.yml"
   render_template "${TEMPLATE_DIR}/traefik/traefik.yml" "${TRAEFIK_DIR}/traefik.yml"
+  traefik_enable_crowdsec_plugin "${TRAEFIK_DIR}/traefik.yml"
   render_template "${TEMPLATE_DIR}/traefik/tls.yml" "${TRAEFIK_DIR}/dynamic/tls.yml"
   if [ "${OAUTH2_ENABLED}" = true ]; then
-    render_template "${TEMPLATE_DIR}/traefik/route-traefik-oauth2.yml" "${TRAEFIK_DIR}/dynamic/route-traefik.yml"
+    render_traefik_route_template "${TEMPLATE_DIR}/traefik/route-traefik-oauth2.yml" "${TRAEFIK_DIR}/dynamic/route-traefik.yml"
   else
-    render_template "${TEMPLATE_DIR}/traefik/route-traefik.yml" "${TRAEFIK_DIR}/dynamic/route-traefik.yml"
+    render_traefik_route_template "${TEMPLATE_DIR}/traefik/route-traefik.yml" "${TRAEFIK_DIR}/dynamic/route-traefik.yml"
   fi
 
   run touch "${TRAEFIK_DIR}/acme/acme.json"
   run chmod 600 "${TRAEFIK_DIR}/acme/acme.json"
+  run touch "${TRAEFIK_DIR}/logs/access.log"
   ok "Stack Traefik générée dans ${TRAEFIK_DIR}"
+}
+
+traefik_enable_crowdsec_plugin() {
+  local traefik_config="$1"
+
+  if [ "${WITH_CROWDSEC:-false}" != true ]; then
+    return 0
+  fi
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] Ajout du plugin CrowdSec Traefik bouncer dans ${traefik_config}"
+    return 0
+  fi
+
+  cat >> "${traefik_config}" <<'EOF'
+
+experimental:
+  plugins:
+    crowdsec-bouncer:
+      moduleName: "github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin"
+      version: "v1.6.0"
+EOF
 }
 
 write_oauth2_allowed_emails_file() {
@@ -179,10 +202,40 @@ step_oauth2() {
     prune_empty_oauth2_env_lines "${oauth2_compose_file}"
     insert_oauth2_allowed_emails_volume "${oauth2_compose_file}"
   fi
-  render_template "${TEMPLATE_DIR}/traefik/middleware-oauth2.yml" "${TRAEFIK_DYNAMIC_DIR}/middleware-oauth2.yml"
+  render_oauth2_middleware_template "${TEMPLATE_DIR}/traefik/middleware-oauth2.yml" "${TRAEFIK_DYNAMIC_DIR}/middleware-oauth2.yml"
   render_template "${TEMPLATE_DIR}/traefik/route-oauth2-proxy.yml" "${TRAEFIK_DYNAMIC_DIR}/route-oauth2-proxy.yml"
 
   ok "Stack OAuth2 Proxy générée dans ${OAUTH2_DIR}"
+}
+
+step_crowdsec() {
+  if [ "${WITH_CROWDSEC:-false}" != true ]; then
+    return 0
+  fi
+
+  CROWDSEC_DIR="${BASE_DIR}/proxy/crowdsec"
+  TRAEFIK_DIR="${BASE_DIR}/proxy/traefik"
+  TRAEFIK_DYNAMIC_DIR="${BASE_DIR}/proxy/traefik/dynamic"
+
+  run mkdir -p \
+    "${CROWDSEC_DIR}" \
+    "${CROWDSEC_DIR}/config" \
+    "${CROWDSEC_DIR}/data" \
+    "${TRAEFIK_DIR}/logs" \
+    "${TRAEFIK_DYNAMIC_DIR}"
+
+  render_template "${TEMPLATE_DIR}/compose/crowdsec.yml" "${CROWDSEC_DIR}/docker-compose.yml"
+  render_template "${TEMPLATE_DIR}/crowdsec/acquis.yml" "${CROWDSEC_DIR}/acquis.yml"
+  render_template "${TEMPLATE_DIR}/crowdsec/profiles.yaml" "${CROWDSEC_DIR}/profiles.yaml"
+  render_template "${TEMPLATE_DIR}/traefik/middleware-crowdsec.yml" "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml"
+
+  if [ "${DRY_RUN:-false}" = false ]; then
+    chmod 700 "${CROWDSEC_DIR}/config" "${CROWDSEC_DIR}/data"
+    chmod 600 "${CROWDSEC_DIR}/docker-compose.yml"
+    chmod 600 "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml"
+  fi
+
+  ok "Stack CrowdSec générée dans ${CROWDSEC_DIR}"
 }
 
 start_compose_stack() {
@@ -218,6 +271,19 @@ start_compose_stack() {
 }
 
 step_start_infrastructure() {
+  if [ "${WITH_CROWDSEC:-false}" = true ]; then
+    CROWDSEC_DIR="${BASE_DIR}/proxy/crowdsec"
+    if [ "${DRY_RUN:-false}" = true ]; then
+      CROWDSEC_START_STATUS="prévu (dry-run)"
+    else
+      CROWDSEC_START_STATUS="en attente"
+    fi
+    start_compose_stack "CrowdSec" "${CROWDSEC_DIR}"
+    if [ "${DRY_RUN:-false}" = false ]; then
+      CROWDSEC_START_STATUS="OK"
+    fi
+  fi
+
   if [ "${WITH_TRAEFIK}" = true ]; then
     TRAEFIK_DIR="${BASE_DIR}/proxy/traefik"
     if [ "${DRY_RUN:-false}" = true ]; then

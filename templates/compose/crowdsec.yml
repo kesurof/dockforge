@@ -1,0 +1,22 @@
+services:
+  crowdsec:
+    image: crowdsecurity/crowdsec:v1.6.4
+    container_name: crowdsec
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - "TZ=${TZ_VALUE}"
+      - "COLLECTIONS=crowdsecurity/traefik"
+      - "BOUNCER_KEY_TRAEFIK=${CROWDSEC_BOUNCER_KEY}"
+    volumes:
+      - "./config:/etc/crowdsec"
+      - "./data:/var/lib/crowdsec/data"
+      - "./acquis.yml:/etc/crowdsec/acquis.yaml:ro"
+      - "./profiles.yaml:/etc/crowdsec/profiles.yaml:ro"
+      - "../traefik/logs:/var/log/traefik:ro"
+
+networks:
+  proxy:
+    name: ${NETWORK_NAME}
+    external: true

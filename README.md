@@ -6,7 +6,7 @@ KSF est un outil léger pour installer et gérer une base Docker Compose sur un 
 
 Il crée un runtime local dans `~/serverbox`, séparé du dépôt Git. Le dépôt contient les scripts et les templates ; les données, secrets, stacks générées et logs restent dans le runtime utilisateur.
 
-KSF permet de gérer Traefik, OAuth2 Proxy, DNS Cloudflare et des applications Docker Compose installables après l'installation initiale.
+KSF permet de gérer Traefik, OAuth2 Proxy, CrowdSec, DNS Cloudflare et des applications Docker Compose installables après l'installation initiale.
 
 ## Concepts importants
 
@@ -31,7 +31,7 @@ KSF permet de gérer Traefik, OAuth2 Proxy, DNS Cloudflare et des applications D
 
 - `apps/` : stacks Docker Compose générées pour les applications.
 - `data/` : données persistantes des applications.
-- `proxy/` : stacks et configuration de Traefik et OAuth2 Proxy.
+- `proxy/` : stacks et configuration de Traefik, OAuth2 Proxy et CrowdSec.
 - `stacks/` : espace réservé aux stacks gérées localement.
 - `logs/` : journaux d'installation et de gestion.
 - `config/` : configuration KSF, dont `ksf.env`, et registre des apps installées.
@@ -77,6 +77,8 @@ Infrastructure :
 ./ksf.sh doctor
 ./ksf.sh render
 ./ksf.sh restart
+./ksf.sh crowdsec status
+./ksf.sh crowdsec decisions
 ./ksf.sh clean-data
 ```
 
@@ -142,6 +144,37 @@ https://oauth2.<domaine>/oauth2/callback
 
 Ne mettez jamais les secrets GitHub dans le dépôt.
 
+## CrowdSec
+
+CrowdSec est une brique de sécurité plateforme intégrée à Traefik. Ce n'est pas une app installable avec `app.sh`.
+
+Activation à l'installation :
+
+```bash
+./deploy.sh --with-traefik --with-crowdsec
+```
+
+Fichiers locaux générés :
+
+```text
+~/serverbox/proxy/crowdsec/
+~/serverbox/proxy/traefik/logs/access.log
+~/serverbox/proxy/traefik/dynamic/middleware-crowdsec.yml
+```
+
+La clé bouncer est générée localement et stockée dans `~/serverbox/config/ksf.env`. CrowdSec n'est pas exposé par Traefik et sa Local API reste accessible uniquement sur le réseau Docker interne.
+
+Commandes utiles :
+
+```bash
+./ksf.sh crowdsec status
+./ksf.sh crowdsec logs
+./ksf.sh crowdsec decisions
+./ksf.sh crowdsec restart
+```
+
+Pour désactiver CrowdSec, passez `WITH_CROWDSEC=false` dans `~/serverbox/config/ksf.env`, relancez `./ksf.sh render`, puis `./ksf.sh restart`. Vous pouvez ensuite arrêter la stack avec `cd ~/serverbox/proxy/crowdsec && docker compose down`. Les données locales restent dans `~/serverbox/proxy/crowdsec/`.
+
 ## Dry-run
 
 ```bash
@@ -168,5 +201,6 @@ Utilisez ce mode pour vérifier le plan avant une installation réelle.
 - Les secrets restent dans `~/serverbox/config/ksf.env`.
 - Les permissions recommandées pour `ksf.env` sont `600`.
 - Ne commitez jamais `~/serverbox/config/ksf.env`.
+- Ne commitez jamais les clés bouncer, données, décisions ou bases CrowdSec générées localement.
 - N'exposez pas d'application sans authentification sauf choix volontaire.
 - Vérifiez l'installation avec `./ksf.sh doctor`.
