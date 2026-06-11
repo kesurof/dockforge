@@ -1,0 +1,16 @@
+http:
+  routers:
+    dockge:
+      rule: "Host(`${APP_HOST}`)"
+      entryPoints:
+        - websecure
+      service: dockge
+      middlewares:
+        - oauth2-chain
+      tls:
+        certResolver: letsencrypt
+  services:
+    dockge:
+      loadBalancer:
+        servers:
+          - url: http://dockge:5001

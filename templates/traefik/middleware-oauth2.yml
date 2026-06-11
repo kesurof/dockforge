@@ -1,0 +1,24 @@
+http:
+  middlewares:
+    oauth2-auth:
+      forwardAuth:
+        address: "http://oauth2-proxy:4180/oauth2/auth"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - X-Auth-Request-User
+          - X-Auth-Request-Email
+          - X-Auth-Request-Preferred-Username
+          - Authorization
+
+    oauth2-errors:
+      errors:
+        status:
+          - "401-403"
+        service: oauth2-proxy
+        query: "/oauth2/sign_in?rd={url}"
+
+    oauth2-chain:
+      chain:
+        middlewares:
+          - oauth2-errors
+          - oauth2-auth

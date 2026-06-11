@@ -1,0 +1,14 @@
+http:
+  routers:
+    radarr:
+      rule: "Host(`${APP_HOST}`)"
+      entryPoints:
+        - websecure
+      service: radarr
+      tls:
+        certResolver: letsencrypt
+  services:
+    radarr:
+      loadBalancer:
+        servers:
+          - url: http://radarr:7878

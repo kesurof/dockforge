@@ -1,0 +1,15 @@
+http:
+  routers:
+    oauth2-proxy:
+      rule: "Host(`${OAUTH2_HOST}`) || PathPrefix(`/oauth2/`)"
+      entryPoints:
+        - websecure
+      service: oauth2-proxy
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    oauth2-proxy:
+      loadBalancer:
+        servers:
+          - url: "http://oauth2-proxy:4180"

@@ -1,0 +1,21 @@
+# Local environment files
+.env
+.env.local
+.kilo
+.docs_dev
+
+# Server data (never committed)
+config/
+data/
+secrets/
+apps-local/
+apps-enabled/
+backups/
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
