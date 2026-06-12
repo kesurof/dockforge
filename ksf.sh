@@ -30,18 +30,32 @@ usage() {
 Usage: $0 <command> [options]
 
 Commandes :
-  status                Afficher l'état global (Traefik, OAuth2, apps)
+
+  Diagnostic :
+  status                Afficher l'état global (Traefik, OAuth2 Proxy, apps)
   config                Afficher la configuration locale (secrets masqués)
   routes                Analyser les routes Traefik dynamiques
-  protect               Appliquer OAuth2 aux routes protégées
+  doctor                Diagnostic global de la plateforme
+
+  Rendu / redémarrage :
+  protect               Appliquer OAuth2 Proxy aux routes protégées
   render                Régénérer les fichiers dynamiques Traefik
   restart               Relancer Traefik, OAuth2 Proxy et CrowdSec
-  doctor                Diagnostic global de la plateforme
+
+  Backup :
   backup <commande>     Sauvegarder/restaurer KSF (create, list, status, verify, restore, prune)
+
+  Update :
   update <service>      Mettre à jour une stack système (crowdsec, traefik, oauth2, all)
+
+  CrowdSec / AppSec :
   crowdsec <commande>   Gérer CrowdSec (status, logs, decisions, alerts, metrics, bouncers, ban, unban, flush-decisions, enroll, console-status, restart, appsec)
+
+  Trusted IPs :
   trusted-ips cloudflare  Afficher les CIDR Cloudflare prêts pour TRAEFIK_TRUSTED_IPS
   trusted-ips apply cloudflare  Appliquer les CIDR Cloudflare et redémarrer Traefik
+
+  Clean-data :
   clean-data [app]      Lister ou supprimer les données conservées
 
 Options :
@@ -52,39 +66,24 @@ Options :
 
 Exemples :
   $0 status
-  $0 config
-  $0 routes
-  $0 protect
-  $0 render
-  $0 restart
   $0 doctor
+  $0 render --dry-run
+  $0 restart
   $0 backup create
-  $0 backup list
-  $0 backup status
-  $0 backup verify ksf-backup-YYYYMMDD-HHMMSS.tar.gz
   $0 backup verify latest
-  $0 backup restore ksf-backup-YYYYMMDD-HHMMSS.tar.gz
   $0 backup restore latest --dry-run
   $0 backup prune --dry-run
-  $0 backup prune -y
   $0 update crowdsec
   $0 update traefik
   $0 update oauth2
-  $0 update all
+  $0 update all --dry-run
   $0 crowdsec status
-  $0 crowdsec logs
-  $0 crowdsec decisions
   $0 crowdsec ban 1.2.3.4 10m
-  $0 crowdsec unban 1.2.3.4
-  $0 crowdsec console-status
-  $0 crowdsec restart
   $0 crowdsec appsec status
-  $0 crowdsec appsec enable
   $0 trusted-ips cloudflare
   $0 trusted-ips apply cloudflare
   $0 clean-data
   $0 clean-data radarr
-  $0 render --dry-run
 EOF
   exit 0
 }

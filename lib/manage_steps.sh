@@ -95,12 +95,12 @@ manage_status() {
 
   if [ "${OAUTH2_ENABLED}" = true ]; then
     if [ -f "${OAUTH2_DIR}/docker-compose.yml" ]; then
-      ok "OAuth2   : configuré, stack présente (${OAUTH2_HOST:-?})"
+      ok "OAuth2 Proxy : configuré, stack présente (${OAUTH2_HOST:-?})"
     else
-      warn "OAuth2   : configuré mais stack absente"
+      warn "OAuth2 Proxy : configuré mais stack absente"
     fi
   else
-    info "OAuth2   : non configuré"
+    info "OAuth2 Proxy : non configuré"
   fi
 
   if [ "${WITH_CROWDSEC}" = true ]; then
@@ -299,7 +299,7 @@ manage_routes() {
         fi
         ;;
       proxy-oauth2)
-        ok "  ${filename}  (proxy OAuth2)  ${host:+→ ${host}}"
+        ok "  ${filename}  (OAuth2 Proxy)  ${host:+→ ${host}}"
         ;;
       anomalie-placeholder)
         err "  ${filename}  (placeholders résiduels)  ${host:+→ ${host}}"
@@ -320,8 +320,8 @@ manage_protect() {
   [ "${DRY_RUN:-false}" = true ] && dry_run_prefix="[DRY-RUN] "
 
   if [ "${OAUTH2_ENABLED}" != true ]; then
-    err "OAuth2 n'est pas activé dans la configuration."
-    err "Protection impossible sans OAuth2."
+    err "OAuth2 Proxy n'est pas activé dans la configuration."
+    err "Protection impossible sans OAuth2 Proxy."
     exit 1
   fi
 
@@ -331,7 +331,7 @@ manage_protect() {
     exit 1
   fi
 
-  echo "${dry_run_prefix}Régénération du middleware OAuth2..."
+  echo "${dry_run_prefix}Régénération du middleware OAuth2 Proxy..."
   render_oauth2_middleware_template "$middleware_tpl" "${TRAEFIK_DYNAMIC_DIR}/middleware-oauth2.yml"
 
   if [ "${WITH_CROWDSEC}" = true ]; then
@@ -393,10 +393,10 @@ manage_render() {
     render_template "${TEMPLATE_DIR}/traefik/tls.yml" "${TRAEFIK_DYNAMIC_DIR}/tls.yml"
 
     if [ "${OAUTH2_ENABLED}" = true ]; then
-      echo "${dry_run_prefix}Rendu de route-traefik.yml (avec OAuth2)..."
+      echo "${dry_run_prefix}Rendu de route-traefik.yml (avec OAuth2 Proxy)..."
       render_traefik_route_template "${TEMPLATE_DIR}/traefik/route-traefik-oauth2.yml" "${TRAEFIK_DYNAMIC_DIR}/route-traefik.yml"
     else
-      echo "${dry_run_prefix}Rendu de route-traefik.yml (sans OAuth2)..."
+      echo "${dry_run_prefix}Rendu de route-traefik.yml (sans OAuth2 Proxy)..."
       render_traefik_route_template "${TEMPLATE_DIR}/traefik/route-traefik.yml" "${TRAEFIK_DYNAMIC_DIR}/route-traefik.yml"
     fi
   fi
@@ -485,22 +485,24 @@ manage_wait_crowdsec_ready() {
 manage_restart() {
   manage_require_installation
 
-  if ! command -v docker >/dev/null 2>&1; then
-    err "Docker n'est pas installé ou inaccessible."
-    exit 1
-  fi
-  if ! docker compose version >/dev/null 2>&1; then
-    err "Docker Compose n'est pas disponible."
-    exit 1
+  if [ "${DRY_RUN:-false}" != true ]; then
+    if ! command -v docker >/dev/null 2>&1; then
+      err "Docker n'est pas installé ou inaccessible."
+      exit 1
+    fi
+    if ! docker compose version >/dev/null 2>&1; then
+      err "Docker Compose n'est pas disponible."
+      exit 1
+    fi
   fi
 
   local restarted=false
 
   if [ "${WITH_CROWDSEC}" = true ] && [ -f "${CROWDSEC_DIR}/docker-compose.yml" ]; then
-    info "Redémarrage de CrowdSec..."
     if [ "${DRY_RUN:-false}" = true ]; then
-      warn "[DRY-RUN] cd ${CROWDSEC_DIR} && docker compose up -d"
+      warn "[DRY-RUN] Redémarrage CrowdSec prévu : cd ${CROWDSEC_DIR} && docker compose up -d"
     else
+      info "Redémarrage de CrowdSec..."
       if ! (cd "${CROWDSEC_DIR}" && docker compose up -d); then
         err "Échec du redémarrage de CrowdSec."
         exit 1
@@ -511,20 +513,20 @@ manage_restart() {
   fi
 
   if [ -f "${TRAEFIK_DIR}/docker-compose.yml" ]; then
-    info "Redémarrage de Traefik..."
     if [ "${DRY_RUN:-false}" = true ]; then
-      warn "[DRY-RUN] cd ${TRAEFIK_DIR} && docker compose up -d"
+      warn "[DRY-RUN] Redémarrage Traefik prévu : cd ${TRAEFIK_DIR} && docker compose up -d"
     else
+      info "Redémarrage de Traefik..."
       (cd "${TRAEFIK_DIR}" && docker compose up -d) || warn "Échec du redémarrage de Traefik."
     fi
     restarted=true
   fi
 
   if [ "${OAUTH2_ENABLED}" = true ] && [ -f "${OAUTH2_DIR}/docker-compose.yml" ]; then
-    info "Redémarrage de OAuth2 Proxy..."
     if [ "${DRY_RUN:-false}" = true ]; then
-      warn "[DRY-RUN] cd ${OAUTH2_DIR} && docker compose up -d"
+      warn "[DRY-RUN] Redémarrage OAuth2 Proxy prévu : cd ${OAUTH2_DIR} && docker compose up -d"
     else
+      info "Redémarrage de OAuth2 Proxy..."
       (cd "${OAUTH2_DIR}" && docker compose up -d) || warn "Échec du redémarrage de OAuth2 Proxy."
     fi
     restarted=true
@@ -533,7 +535,11 @@ manage_restart() {
   if [ "$restarted" = false ]; then
     warn "Aucune stack d'infrastructure à redémarrer."
   else
-    ok "Redémarrage terminé."
+    if [ "${DRY_RUN:-false}" = true ]; then
+      ok "Redémarrage : prévu (dry-run)"
+    else
+      ok "Redémarrage terminé."
+    fi
   fi
 }
 
@@ -848,7 +854,7 @@ manage_crowdsec_appsec_restart_traefik() {
 manage_crowdsec_appsec_status() {
   manage_crowdsec_require
 
-  echo "=== CrowdSec AppSec / WAF ==="
+  echo "=== AppSec / WAF ==="
   echo "Config ksf.env       : ${CROWDSEC_APPSEC_ENABLED}"
   echo "AppSec listen addr   : ${CROWDSEC_APPSEC_LISTEN_ADDR}"
   echo "AppSec host Traefik  : ${CROWDSEC_APPSEC_HOST}"
@@ -905,7 +911,7 @@ manage_crowdsec_appsec_enable() {
   manage_crowdsec_appsec_restart_traefik
 
   echo ""
-  ok "CrowdSec AppSec/WAF activé."
+  ok "AppSec / WAF activé."
   echo "  AppSec host       : ${CROWDSEC_APPSEC_HOST}"
   echo "  Failure block     : ${CROWDSEC_APPSEC_FAILURE_BLOCK}"
   echo "  Unreachable block : ${CROWDSEC_APPSEC_UNREACHABLE_BLOCK}"
@@ -923,7 +929,7 @@ manage_crowdsec_appsec_disable() {
   manage_crowdsec_appsec_restart_crowdsec
   manage_crowdsec_appsec_restart_traefik
 
-  ok "CrowdSec AppSec/WAF désactivé. CrowdSec log-based reste actif."
+  ok "AppSec / WAF désactivé. CrowdSec log-based reste actif."
 }
 
 manage_crowdsec_appsec_metrics() {
@@ -1002,7 +1008,7 @@ manage_crowdsec_appsec() {
     metrics) manage_crowdsec_appsec_metrics ;;
     test) manage_crowdsec_appsec_test ;;
     *)
-      err "Commande CrowdSec AppSec inconnue : ${subcommand:-<vide>}"
+      err "Commande AppSec / WAF inconnue : ${subcommand:-<vide>}"
       err "Commandes disponibles : status, enable, disable, metrics, test"
       exit 1
       ;;
@@ -1188,6 +1194,11 @@ manage_trusted_ips() {
 # ---------- Update système ----------
 
 manage_update_usage_error() {
+  local service="${1:-}"
+  if [ -n "$service" ]; then
+    err "Service update inconnu : ${service}"
+  fi
+  err "Valeurs acceptées : crowdsec, traefik, oauth2, all"
   err "Usage : ./ksf.sh update <crowdsec|traefik|oauth2|all>"
   exit 1
 }
@@ -1235,7 +1246,7 @@ manage_update_resolve_service() {
       UPDATE_CONTAINER="oauth2-proxy"
       ;;
     *)
-      manage_update_usage_error
+      manage_update_usage_error "$service"
       ;;
   esac
 }
@@ -1255,6 +1266,7 @@ manage_update_require_service() {
   manage_update_resolve_service "$service"
   if ! manage_update_service_present "$service"; then
     err "Stack ${UPDATE_SERVICE_LABEL} absente ou non activée : ${UPDATE_COMPOSE_FILE}"
+    err "Services acceptés : crowdsec, traefik, oauth2, all"
     exit 1
   fi
 }
@@ -1302,8 +1314,13 @@ manage_update_print_summary() {
 
   echo "=== Résumé update système KSF ==="
   echo "Service concerné       : ${requested}"
-  echo "Backup automatique     : prévu"
-  echo "Doctor après update    : prévu"
+  if [ "${DRY_RUN:-false}" = true ]; then
+    echo "Backup automatique     : prévu (dry-run)"
+    echo "Doctor après update    : prévu (dry-run)"
+  else
+    echo "Backup automatique     : prévu"
+    echo "Doctor après update    : prévu"
+  fi
   echo ""
   for service in "${services[@]}"; do
     manage_update_resolve_service "$service"
@@ -1392,7 +1409,7 @@ manage_update_check_appsec_if_needed() {
   if [ "${CROWDSEC_APPSEC_ENABLED:-false}" != true ]; then
     return 0
   fi
-  info "Vérification CrowdSec AppSec après update..."
+  info "Vérification AppSec / WAF après update..."
   manage_crowdsec_appsec_status
 }
 
@@ -1400,13 +1417,21 @@ manage_update_one_service() {
   local service="$1"
 
   manage_update_require_service "$service"
-  info "Pull ${UPDATE_SERVICE_LABEL}..."
+  if [ "${DRY_RUN:-false}" = true ]; then
+    info "Pull ${UPDATE_SERVICE_LABEL} prévu (dry-run)..."
+  else
+    info "Pull ${UPDATE_SERVICE_LABEL}..."
+  fi
   manage_update_compose_pull "$UPDATE_COMPOSE_DIR"
-  UPDATE_PULL_DONE=true
+  [ "${DRY_RUN:-false}" = true ] || UPDATE_PULL_DONE=true
 
-  info "Redémarrage ${UPDATE_SERVICE_LABEL}..."
+  if [ "${DRY_RUN:-false}" = true ]; then
+    info "Redémarrage ${UPDATE_SERVICE_LABEL} prévu (dry-run)..."
+  else
+    info "Redémarrage ${UPDATE_SERVICE_LABEL}..."
+  fi
   manage_update_compose_up "$UPDATE_COMPOSE_DIR"
-  UPDATE_RESTARTED_SERVICES+=("${UPDATE_SERVICE_LABEL}")
+  [ "${DRY_RUN:-false}" = true ] || UPDATE_RESTARTED_SERVICES+=("${UPDATE_SERVICE_LABEL}")
 
   if [ "$service" = "crowdsec" ]; then
     manage_wait_crowdsec_ready
@@ -1446,8 +1471,13 @@ manage_update_print_final_summary() {
   echo ""
   echo "=== Résumé final update KSF ==="
   echo "Backup créé          : ${UPDATE_BACKUP_CREATED:-non}"
-  echo "Pull effectué        : $( [ "${UPDATE_PULL_DONE:-false}" = true ] && echo oui || echo prévu )"
-  echo "Conteneur redémarré  : ${UPDATE_RESTARTED_SERVICES[*]:-prévu}"
+  if [ "${DRY_RUN:-false}" = true ]; then
+    echo "Pull                 : prévu (dry-run)"
+    echo "Redémarrage          : prévu (dry-run)"
+  else
+    echo "Pull                 : $( [ "${UPDATE_PULL_DONE:-false}" = true ] && echo oui || echo non )"
+    echo "Redémarrage          : ${UPDATE_RESTARTED_SERVICES[*]:-non}"
+  fi
   echo "Statut final         :"
   for service in "${services[@]}"; do
     manage_update_resolve_service "$service"
@@ -1465,7 +1495,7 @@ manage_update() {
   [ -n "$requested" ] || manage_update_usage_error
   case "$requested" in
     crowdsec|traefik|oauth2|all) ;;
-    *) manage_update_usage_error ;;
+    *) manage_update_usage_error "$requested" ;;
   esac
 
   manage_require_installation
@@ -1532,6 +1562,9 @@ manage_doctor() {
   local warnings=0
 
   echo "=== KSF Diagnostic ==="
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] Doctor : diagnostic en lecture seule, aucune modification prévue."
+  fi
   echo ""
 
   # 1. Configuration présente et lisible
@@ -1588,9 +1621,9 @@ manage_doctor() {
   fi
   if [ "${OAUTH2_ENABLED}" = true ]; then
     if [ -f "${OAUTH2_DIR}/docker-compose.yml" ]; then
-      _manage_check ok "Stack OAuth2" "docker-compose.yml présent"
+      _manage_check ok "Stack OAuth2 Proxy" "docker-compose.yml présent"
     else
-      _manage_check err "Stack OAuth2" "docker-compose.yml absent"
+      _manage_check err "Stack OAuth2 Proxy" "docker-compose.yml absent"
       ((errors++)) || true
     fi
   fi
@@ -1640,9 +1673,9 @@ manage_doctor() {
       # 5c. Containers OAuth2
       if [ "${OAUTH2_ENABLED}" = true ] && [ -f "${OAUTH2_DIR}/docker-compose.yml" ]; then
         if docker ps --filter "name=oauth2-proxy$" --format "{{.Names}}" 2>/dev/null | grep -q "oauth2-proxy"; then
-          _manage_check ok "Container OAuth2" "Actif"
+          _manage_check ok "Container OAuth2 Proxy" "Actif"
         else
-          _manage_check warn "Container OAuth2" "Arrêté ou absent"
+          _manage_check warn "Container OAuth2 Proxy" "Arrêté ou absent"
           ((warnings++)) || true
         fi
       fi
@@ -1671,12 +1704,12 @@ manage_doctor() {
     ((warnings++)) || true
   fi
 
-  # 6. Middleware OAuth2
+  # 6. Middleware OAuth2 Proxy
   if [ "${OAUTH2_ENABLED}" = true ]; then
     if [ -f "${TRAEFIK_DYNAMIC_DIR}/middleware-oauth2.yml" ]; then
-      _manage_check ok "Middleware OAuth2" "Présent"
+      _manage_check ok "Middleware OAuth2 Proxy" "Présent"
     else
-      _manage_check err "Middleware OAuth2" "Absent (lancer: ./ksf.sh render)"
+      _manage_check err "Middleware OAuth2 Proxy" "Absent (lancer: ./ksf.sh render)"
       ((errors++)) || true
     fi
   fi
@@ -1764,17 +1797,17 @@ manage_doctor() {
     fi
 
     if [ "${CROWDSEC_APPSEC_ENABLED:-false}" != true ]; then
-      _manage_check ok "CrowdSec AppSec" "inactif"
+      _manage_check ok "AppSec / WAF" "inactif"
     else
       if [ -f "${CROWDSEC_DIR}/appsec.yaml" ]; then
         if grep -q 'crowdsecurity/appsec-default' "${CROWDSEC_DIR}/appsec.yaml" 2>/dev/null && grep -q 'source: appsec' "${CROWDSEC_DIR}/appsec.yaml" 2>/dev/null && grep -q "listen_addr: ${CROWDSEC_APPSEC_LISTEN_ADDR}" "${CROWDSEC_DIR}/appsec.yaml" 2>/dev/null; then
-          _manage_check ok "CrowdSec AppSec acquisition" "appsec.yaml présent"
+          _manage_check ok "AppSec / WAF acquisition" "appsec.yaml présent"
         else
-          _manage_check err "CrowdSec AppSec acquisition" "appsec.yaml incomplet"
+          _manage_check err "AppSec / WAF acquisition" "appsec.yaml incomplet"
           ((errors++)) || true
         fi
       else
-        _manage_check err "CrowdSec AppSec acquisition" "appsec.yaml absent"
+        _manage_check err "AppSec / WAF acquisition" "appsec.yaml absent"
         ((errors++)) || true
       fi
 

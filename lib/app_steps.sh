@@ -223,7 +223,7 @@ app_status() {
   else
     echo "Accès      : non exposé"
   fi
-  echo "OAuth2     : ${APP_AUTH:-false}"
+  echo "OAuth2 Proxy: ${APP_AUTH:-false}"
   echo ""
 
   if ! command -v docker >/dev/null 2>&1 || ! docker ps >/dev/null 2>&1; then
@@ -333,7 +333,7 @@ resolve_app_auth() {
     APP_AUTH=false
   elif [ "${OAUTH2_ENABLED:-false}" = true ]; then
     if [ "${AUTO_YES}" = false ]; then
-      echo -n "Protéger l'accès à ${app_name} avec OAuth2 ? (oui/non) [non] : "
+      echo -n "Protéger l'accès à ${app_name} avec OAuth2 Proxy ? (oui/non) [non] : "
       read -r auth_input
       if [ "$auth_input" = "oui" ]; then
         APP_AUTH=true
@@ -344,7 +344,7 @@ resolve_app_auth() {
   fi
 
   if [ "${APP_AUTH}" = true ] && [ "${OAUTH2_ENABLED:-false}" != true ]; then
-    err "OAuth2 n'est pas configuré. Relance deploy.sh avec OAuth2 ou utilise --no-auth."
+    err "OAuth2 Proxy n'est pas configuré. Relance deploy.sh avec OAuth2 Proxy ou utilise --no-auth."
     exit 1
   fi
 }

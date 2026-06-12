@@ -103,7 +103,7 @@ Options:
   --traefik-trusted-ips CIDRS|cloudflare  Proxies CIDR de confiance pour X-Forwarded-For
   --with-traefik          Génère une stack Traefik
   --with-crowdsec         Génère CrowdSec et le middleware Traefik bouncer
-  --with-appsec           Active CrowdSec AppSec/WAF (implique --with-crowdsec et --with-traefik)
+  --with-appsec           Active AppSec / WAF (implique --with-crowdsec et --with-traefik)
   --crowdsec-bouncer-key KEY  Clé bouncer Traefik CrowdSec (générée si absente)
   --oauth-client-id ID    GitHub OAuth Client ID
   --oauth-client-secret SEC  GitHub OAuth Client Secret
@@ -660,7 +660,7 @@ prompt_deploy_questions() {
     ask_bool WITH_CROWDSEC "Activer CrowdSec pour Traefik"
     if [ "$WITH_CROWDSEC" = true ]; then
       WITH_TRAEFIK=true
-      ask_bool CROWDSEC_APPSEC_ENABLED "Activer CrowdSec AppSec / WAF"
+      ask_bool CROWDSEC_APPSEC_ENABLED "Activer AppSec / WAF"
       if [ -z "$TRAEFIK_TRUSTED_IPS" ] && [ "$TRAEFIK_TRUSTED_IPS_SET" = false ]; then
         echo "Trusted IPs Traefik : Cloudflare officiel sera appliqué automatiquement."
       else
@@ -707,17 +707,17 @@ show_deploy_plan() {
   echo "CrowdSec             : $(display_bool "${WITH_CROWDSEC}")"
   if [ "${WITH_CROWDSEC}" = true ]; then
     echo "CrowdSec bouncer key : $(display_secret_auto "${CROWDSEC_BOUNCER_KEY}")"
-    echo "CrowdSec AppSec/WAF  : $(display_bool "${CROWDSEC_APPSEC_ENABLED}")"
+    echo "AppSec / WAF         : $(display_bool "${CROWDSEC_APPSEC_ENABLED}")"
     echo "AppSec host          : ${CROWDSEC_APPSEC_HOST}"
     echo "AppSec failure block : ${CROWDSEC_APPSEC_FAILURE_BLOCK}"
     echo "AppSec unreach block : ${CROWDSEC_APPSEC_UNREACHABLE_BLOCK}"
     echo "AppSec collections   : ${CROWDSEC_APPSEC_COLLECTIONS}"
   else
     echo "CrowdSec bouncer key : $(display_secret "${CROWDSEC_BOUNCER_KEY}")"
-    echo "CrowdSec AppSec/WAF  : inactif"
+    echo "AppSec / WAF         : inactif"
   fi
   echo "OAuth2 Proxy         : $(display_bool "${OAUTH2_ENABLED}")"
-  echo "Host OAuth2          : $(display_value "${OAUTH2_HOST}")"
+  echo "Host OAuth2 Proxy    : $(display_value "${OAUTH2_HOST}")"
   echo "OAuth2 client ID     : $(display_presence "${OAUTH2_CLIENT_ID}")"
   echo "OAuth2 secret        : $(display_secret "${OAUTH2_CLIENT_SECRET}")"
   if [ "$OAUTH2_AUTH_MODE" = "email" ]; then
@@ -841,7 +841,7 @@ validate_deploy_config() {
   fi
 
   if [ "$CROWDSEC_APPSEC_ENABLED" = true ] && { [ "$WITH_CROWDSEC" != true ] || [ "$WITH_TRAEFIK" != true ]; }; then
-    err "CrowdSec AppSec/WAF nécessite CrowdSec et Traefik."
+    err "AppSec / WAF nécessite CrowdSec et Traefik."
     return 1
   fi
 
@@ -1001,7 +1001,7 @@ if [ "$WITH_TRAEFIK" = true ]; then
   info "Traefik : ${TRAEFIK_HOST} (${ACME_EMAIL})"
 fi
 if [ "$OAUTH2_ENABLED" = true ]; then
-  info "OAuth2  : ${OAUTH2_HOST}"
+  info "OAuth2 Proxy: ${OAUTH2_HOST}"
   if [ "$OAUTH2_AUTH_MODE" = "email" ]; then
     info "OAuth2 autorisation : emails GitHub (${OAUTH2_ALLOWED_EMAILS})"
   fi
@@ -1012,7 +1012,7 @@ fi
 if [ "$WITH_CROWDSEC" = true ]; then
   info "CrowdSec: activé pour Traefik"
   if [ "$CROWDSEC_APPSEC_ENABLED" = true ]; then
-    info "CrowdSec AppSec/WAF: activé (${CROWDSEC_APPSEC_HOST})"
+    info "AppSec / WAF: activé (${CROWDSEC_APPSEC_HOST})"
   fi
 fi
 
@@ -1047,16 +1047,16 @@ echo "Host Traefik     : $(display_value "${TRAEFIK_HOST}")"
 echo "Trusted IPs      : $(display_value "${TRAEFIK_TRUSTED_IPS}" "aucune")"
 echo "CrowdSec         : $(display_bool "${WITH_CROWDSEC}")"
 if [ "${WITH_CROWDSEC}" = true ]; then
-  echo "CrowdSec AppSec/WAF : $(display_bool "${CROWDSEC_APPSEC_ENABLED}")"
+  echo "AppSec / WAF    : $(display_bool "${CROWDSEC_APPSEC_ENABLED}")"
   echo "AppSec host      : ${CROWDSEC_APPSEC_HOST}"
   echo "AppSec failure block : ${CROWDSEC_APPSEC_FAILURE_BLOCK}"
   echo "AppSec unreachable block : ${CROWDSEC_APPSEC_UNREACHABLE_BLOCK}"
   echo "AppSec collections : ${CROWDSEC_APPSEC_COLLECTIONS}"
 else
-  echo "CrowdSec AppSec/WAF : inactif"
+  echo "AppSec / WAF    : inactif"
 fi
 echo "OAuth2 Proxy     : $(display_bool "${OAUTH2_ENABLED}")"
-echo "Host OAuth2      : $(display_value "${OAUTH2_HOST}")"
+echo "Host OAuth2 Proxy: $(display_value "${OAUTH2_HOST}")"
 if [ "$OAUTH2_AUTH_MODE" = "email" ]; then
   echo "OAuth2 emails    : ${OAUTH2_ALLOWED_EMAILS}"
 fi

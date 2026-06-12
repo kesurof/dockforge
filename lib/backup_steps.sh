@@ -151,6 +151,22 @@ backup_add_app() {
   esac
 }
 
+backup_display_components() {
+  local component label rendered=""
+
+  for component in "$@"; do
+    case "$component" in
+      traefik) label="Traefik" ;;
+      oauth2) label="OAuth2 Proxy" ;;
+      crowdsec) label="CrowdSec" ;;
+      appsec) label="AppSec / WAF" ;;
+      *) label="$component" ;;
+    esac
+    rendered="${rendered:+${rendered}, }${label}"
+  done
+  printf '%s' "${rendered:-aucun}"
+}
+
 backup_add_path() {
   local src="$1"
   local dest="$2"
@@ -317,7 +333,7 @@ backup_create() {
     done
     echo ""
     echo "Apps incluses       : ${BACKUP_APPS[*]:-aucune}"
-    echo "Composants inclus   : ${BACKUP_COMPONENTS[*]:-aucun}"
+    echo "Composants inclus   : $(backup_display_components "${BACKUP_COMPONENTS[@]:-}")"
     return 0
   fi
 
@@ -347,7 +363,7 @@ backup_create() {
   echo "Taille             : ${size}"
   echo "Fichiers inclus    : ${file_count}"
   echo "Apps incluses      : ${BACKUP_APPS[*]:-aucune}"
-  echo "Composants inclus  : ${BACKUP_COMPONENTS[*]:-aucun}"
+  echo "Composants inclus  : $(backup_display_components "${BACKUP_COMPONENTS[@]:-}")"
   echo "Vérifier           : ./ksf.sh backup verify $(basename "$archive")"
   echo "Restaurer          : ./ksf.sh backup restore $(basename "$archive")"
   echo "Vérifier latest    : ./ksf.sh backup verify latest"

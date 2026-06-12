@@ -30,11 +30,14 @@ Structure source :
 bootstrap.sh
 deploy.sh
 app.sh
+ksf.sh
 lib/
   common.sh
   steps.sh
   deploy_steps.sh
   app_steps.sh
+  backup_steps.sh
+  update_steps.sh
   render.sh
 templates/
   compose/
@@ -105,13 +108,28 @@ Autorisé :
 - Installer une app depuis `templates/apps/<app>/`.
 - Supprimer une app en préservant ses données.
 - Générer les routes Traefik applicatives.
-- Appliquer OAuth2 par app si demandé.
+- Appliquer OAuth2 Proxy par app si demandé.
 
 Interdit :
 
 - Installer Docker.
 - Régénérer toute la plateforme.
 - Modifier la configuration SSH ou système.
+
+### `ksf.sh`
+
+Autorisé :
+
+- Exploiter une installation existante : `doctor`, `render`, `restart`.
+- Gérer CrowdSec, AppSec / WAF et les trusted-ips.
+- Gérer les sauvegardes locales et les updates de stacks système.
+- Diagnostiquer l'état de Traefik, OAuth2 Proxy, CrowdSec et des apps installées.
+
+Interdit :
+
+- Installer Docker ou modifier la configuration SSH/système.
+- Installer ou supprimer des apps métier hors cycle `app.sh`.
+- Régénérer une plateforme initiale comme `deploy.sh`.
 
 ## Ajout d'une application
 
@@ -149,10 +167,10 @@ Règles :
 
 - Les fichiers contenant des secrets doivent être créés en permission `600`.
 - `ksf.env`, `.env` et les fichiers d'app installée ne doivent pas être commités.
-- OAuth2 doit rester optionnel au niveau plateforme et optionnel par application.
-- Si OAuth2 est demandé pour une app alors qu'il n'est pas configuré, le script doit échouer explicitement.
+- OAuth2 Proxy doit rester optionnel au niveau plateforme et optionnel par application.
+- Si OAuth2 Proxy est demandé pour une app alors qu'il n'est pas configuré, le script doit échouer explicitement.
 - Ne jamais exposer le socket Docker en écriture si un montage read-only suffit.
-- Tout accès direct à une UI d'administration doit être local-only ou protégé par Traefik/OAuth2.
+- Tout accès direct à une UI d'administration doit être local-only ou protégé par Traefik/OAuth2 Proxy.
 
 ## Dry-run
 
@@ -172,11 +190,20 @@ Après modification de scripts :
 bash -n bootstrap.sh
 bash -n deploy.sh
 bash -n app.sh
+bash -n ksf.sh
 bash -n lib/common.sh
 bash -n lib/steps.sh
 bash -n lib/deploy_steps.sh
 bash -n lib/app_steps.sh
+bash -n lib/manage_steps.sh
+bash -n lib/backup_steps.sh
 bash -n lib/render.sh
+```
+
+Ou, pour couvrir les scripts et bibliothèques présents :
+
+```bash
+bash -n ksf.sh lib/*.sh
 ```
 
 Après modification de templates Compose, valider avec des variables de test :

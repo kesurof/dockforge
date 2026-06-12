@@ -41,7 +41,7 @@ Options:
   --domain DOMAIN       Domaine principal pour cette app
   --subdomain NAME      Sous-domaine de l'app (défaut: nom de l'app)
   --host HOST           Hostname complet de l'app
-  --auth                Protège l'app avec OAuth2 (si OAuth2 est configuré)
+  --auth                Protège l'app avec OAuth2 Proxy (si OAuth2 Proxy est configuré)
   --no-auth             N'applique pas OAuth2 à cette app
   --local-only          Ne génère pas de route Traefik
   --dry-run             Affiche les actions sans modifier les fichiers
