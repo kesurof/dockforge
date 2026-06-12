@@ -159,6 +159,7 @@ Fichiers locaux générés :
 
 ```text
 ~/serverbox/proxy/crowdsec/
+~/serverbox/proxy/traefik/traefik.yml
 ~/serverbox/proxy/traefik/logs/access.log
 ~/serverbox/proxy/traefik/dynamic/middleware-crowdsec.yml
 ```
@@ -167,7 +168,7 @@ La clé bouncer est générée localement et stockée dans `~/serverbox/config/k
 
 Traefik utilise le plugin CrowdSec nommé `bouncer` et le mode `stream`. Les routes publiques utilisent `security-chain` quand CrowdSec est actif. Les routes protégées restent sur `oauth2-chain`, qui appelle CrowdSec avant OAuth2.
 
-Si vos DNS Cloudflare sont en mode proxy, renseignez les CIDR Cloudflare via `--traefik-trusted-ips` pendant l'installation, ou `TRAEFIK_TRUSTED_IPS` dans `ksf.env` avant de régénérer Traefik. N'activez pas `forwardedHeaders.insecure=true` : sans trusted IPs correctes, CrowdSec peut voir et bannir les IP Cloudflare au lieu des vraies IP visiteurs.
+Si vos DNS Cloudflare sont en mode proxy, renseignez les CIDR Cloudflare via `--traefik-trusted-ips` pendant l'installation, ou `TRAEFIK_TRUSTED_IPS` dans `ksf.env`. Après modification de `TRAEFIK_TRUSTED_IPS`, lancez `./ksf.sh render` pour régénérer `proxy/traefik/traefik.yml`, puis `./ksf.sh restart` pour appliquer la configuration statique. N'activez pas `forwardedHeaders.insecure=true` : sans trusted IPs correctes, CrowdSec peut voir et bannir les IP Cloudflare au lieu des vraies IP visiteurs.
 
 Commandes utiles :
 

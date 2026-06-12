@@ -31,7 +31,7 @@ RENDER_VARS=(
   OAUTH2_AUTHENTICATED_EMAILS_FILE
   CROWDSEC_BOUNCER_KEY
   TRAEFIK_TRUSTED_IPS
-  TRAEFIK_PUBLIC_MIDDLEWARES
+  TRAEFIK_PUBLIC_MIDDLEWARES_BLOCK
   TRAEFIK_OAUTH2_CHAIN_MIDDLEWARES
   TRAEFIK_TRUSTED_IPS_YAML
   APP_HOST
@@ -50,18 +50,31 @@ RENDER_OPTIONAL_VARS=(
   OAUTH2_GITHUB_USER
   CROWDSEC_BOUNCER_KEY
   TRAEFIK_TRUSTED_IPS
+  TRAEFIK_PUBLIC_MIDDLEWARES_BLOCK
   TRAEFIK_TRUSTED_IPS_YAML
 )
 
 prepare_render_context() {
   if [ "${WITH_CROWDSEC:-false}" = true ]; then
-    TRAEFIK_PUBLIC_MIDDLEWARES="[security-chain]"
+    TRAEFIK_PUBLIC_MIDDLEWARES_BLOCK="      middlewares:
+        - security-chain"
     TRAEFIK_OAUTH2_CHAIN_MIDDLEWARES="[crowdsec, oauth2-errors, oauth2-auth]"
   else
-    TRAEFIK_PUBLIC_MIDDLEWARES="[]"
+    TRAEFIK_PUBLIC_MIDDLEWARES_BLOCK=""
     TRAEFIK_OAUTH2_CHAIN_MIDDLEWARES="[oauth2-errors, oauth2-auth]"
   fi
   : "${TRAEFIK_TRUSTED_IPS_YAML:=[]}"
+}
+
+render_traefik_static_template() {
+  local template_dir="$1"
+  local destination="$2"
+
+  if [ "${WITH_CROWDSEC:-false}" = true ]; then
+    render_template "${template_dir}/traefik/traefik-crowdsec.yml" "$destination"
+  else
+    render_template "${template_dir}/traefik/traefik.yml" "$destination"
+  fi
 }
 
 is_optional_render_var() {

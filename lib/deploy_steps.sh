@@ -65,11 +65,7 @@ step_traefik() {
   run mkdir -p "${TRAEFIK_DIR}/dynamic" "${TRAEFIK_DIR}/acme" "${TRAEFIK_DIR}/logs"
 
   render_template "${TEMPLATE_DIR}/compose/traefik.yml" "${TRAEFIK_DIR}/docker-compose.yml"
-  if [ "${WITH_CROWDSEC:-false}" = true ]; then
-    render_template "${TEMPLATE_DIR}/traefik/traefik-crowdsec.yml" "${TRAEFIK_DIR}/traefik.yml"
-  else
-    render_template "${TEMPLATE_DIR}/traefik/traefik.yml" "${TRAEFIK_DIR}/traefik.yml"
-  fi
+  render_traefik_static_template "${TEMPLATE_DIR}" "${TRAEFIK_DIR}/traefik.yml"
   render_template "${TEMPLATE_DIR}/traefik/tls.yml" "${TRAEFIK_DIR}/dynamic/tls.yml"
   if [ "${OAUTH2_ENABLED}" = true ]; then
     render_traefik_route_template "${TEMPLATE_DIR}/traefik/route-traefik-oauth2.yml" "${TRAEFIK_DIR}/dynamic/route-traefik.yml"

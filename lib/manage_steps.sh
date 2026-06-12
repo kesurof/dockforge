@@ -371,11 +371,14 @@ manage_render() {
   local dry_run_prefix=""
   [ "${DRY_RUN:-false}" = true ] && dry_run_prefix="[DRY-RUN] "
 
-  info "Régénération des fichiers dynamiques Traefik..."
+  info "Régénération de la configuration Traefik..."
 
   mkdir -p "${TRAEFIK_DYNAMIC_DIR}"
 
   if [ "${WITH_TRAEFIK}" = true ]; then
+    echo "${dry_run_prefix}Rendu de traefik.yml (configuration statique)..."
+    render_traefik_static_template "${TEMPLATE_DIR}" "${TRAEFIK_DIR}/traefik.yml"
+
     echo "${dry_run_prefix}Rendu de tls.yml..."
     render_template "${TEMPLATE_DIR}/traefik/tls.yml" "${TRAEFIK_DYNAMIC_DIR}/tls.yml"
 
@@ -427,7 +430,7 @@ manage_render() {
   done
 
   ok "${count} route(s) d'application régénérée(s)."
-  ok "Rendu terminé. Les stacks et la configuration locale ne sont pas modifiées."
+  ok "Rendu terminé. La configuration générée est à jour ; relance ./ksf.sh restart pour appliquer la configuration statique Traefik."
 }
 
 # ---------- Restart ----------
@@ -938,6 +941,17 @@ manage_doctor() {
       ((warnings++)) || true
     elif [ -n "${TRAEFIK_TRUSTED_IPS:-}" ]; then
       _manage_check ok "Trusted IPs Traefik" "${TRAEFIK_TRUSTED_IPS}"
+    fi
+  fi
+
+  if [ "${WITH_TRAEFIK}" = true ] && [ -f "${TRAEFIK_DIR}/traefik.yml" ]; then
+    local trusted_ips_count
+    trusted_ips_count=$(grep -F -c "trustedIPs: ${TRAEFIK_TRUSTED_IPS_YAML}" "${TRAEFIK_DIR}/traefik.yml" 2>/dev/null || true)
+    if [ "${trusted_ips_count:-0}" -ge 2 ]; then
+      _manage_check ok "Trusted IPs rendues" "${TRAEFIK_TRUSTED_IPS:-aucune}"
+    else
+      _manage_check err "Trusted IPs rendues" "traefik.yml ne correspond pas à TRAEFIK_TRUSTED_IPS=${TRAEFIK_TRUSTED_IPS:-<vide>}"
+      ((errors++)) || true
     fi
   fi
 
