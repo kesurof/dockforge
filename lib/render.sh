@@ -147,7 +147,7 @@ is_optional_render_var() {
 render_template() {
   local template="$1"
   local destination="$2"
-  local content var token value shell_token
+  local content var token value shell_token quote_env_values=false
 
   prepare_render_context
 
@@ -157,10 +157,18 @@ render_template() {
   fi
 
   content="$(<"$template")"
+  case "$template" in
+    */env/ksf.env)
+      quote_env_values=true
+      ;;
+  esac
   for var in "${RENDER_VARS[@]}"; do
     token="__${var}__"
     shell_token="\${${var}}"
     value="${!var-}"
+    if [ "$quote_env_values" = true ]; then
+      value="$(ksf_env_quote_value "$value")"
+    fi
     if [ -z "$value" ] && ! is_optional_render_var "$var" && { [[ "$content" == *"$token"* ]] || [[ "$content" == *"$shell_token"* ]]; }; then
       warn "Variable ${var} vide pendant le rendu de ${template}"
     fi

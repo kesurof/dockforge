@@ -17,6 +17,107 @@ run() {
   "$@"
 }
 
+# ---------- Sérialisation ksf.env ----------
+ksf_env_quote_value() {
+  local value="${1-}"
+  local escaped
+
+  case "$value" in
+    true|false)
+      printf '%s' "$value"
+      return 0
+      ;;
+    '')
+      printf '""'
+      return 0
+      ;;
+  esac
+
+  if [[ "$value" =~ ^[A-Za-z0-9_./:@,%+-]+$ ]]; then
+    printf '%s' "$value"
+    return 0
+  fi
+
+  escaped="${value//\\/\\\\}"
+  escaped="${escaped//\"/\\\"}"
+  escaped="${escaped//\$/\\\$}"
+  escaped="${escaped//\`/\\\`}"
+  printf '"%s"' "$escaped"
+}
+
+ksf_env_unquote_value() {
+  local value="${1-}"
+
+  if [[ "$value" == \"*\" ]] && [[ "$value" == *\" ]]; then
+    value="${value#\"}"
+    value="${value%\"}"
+    value="${value//\\\"/\"}"
+    value="${value//\\\$/\$}"
+    value="${value//\\\`/\`}"
+    value="${value//\\\\/\\}"
+  elif [[ "$value" == \'*\' ]] && [[ "$value" == *\' ]]; then
+    value="${value#\'}"
+    value="${value%\'}"
+  fi
+
+  printf '%s' "$value"
+}
+
+ksf_env_write_var() {
+  local file="$1"
+  local key="$2"
+  local value="${3-}"
+
+  printf '%s=%s\n' "$key" "$(ksf_env_quote_value "$value")" >> "$file"
+}
+
+ksf_env_repair_sourceable_file() {
+  local file="$1"
+  local tmp_file="${file}.tmp"
+  local line key value repaired=false
+
+  [ -f "$file" ] || return 0
+
+  : > "$tmp_file"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      ''|'#'*)
+        printf '%s\n' "$line" >> "$tmp_file"
+        continue
+        ;;
+    esac
+
+    if [[ "$line" == *=* ]]; then
+      key="${line%%=*}"
+      value="${line#*=}"
+      if [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+        case "$value" in
+          \"*|\'*)
+            printf '%s\n' "$line" >> "$tmp_file"
+            ;;
+          *[[:space:]]*)
+            printf '%s=%s\n' "$key" "$(ksf_env_quote_value "$value")" >> "$tmp_file"
+            repaired=true
+            ;;
+          *)
+            printf '%s\n' "$line" >> "$tmp_file"
+            ;;
+        esac
+        continue
+      fi
+    fi
+
+    printf '%s\n' "$line" >> "$tmp_file"
+  done < "$file"
+
+  if [ "$repaired" = true ]; then
+    mv "$tmp_file" "$file"
+    chmod 600 "$file" 2>/dev/null || true
+  else
+    rm -f "$tmp_file"
+  fi
+}
+
 # ---------- Détection de la distribution ----------
 detect_pkg_mgr() {
   if   [ -f /etc/debian_version ];        then echo "apt-get"

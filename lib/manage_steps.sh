@@ -42,6 +42,7 @@ manage_require_installation() {
     err "Exécute d'abord : ./deploy.sh"
     exit 1
   fi
+  ksf_env_repair_sourceable_file "$env_file"
   source "$env_file"
   _manage_setup_paths
   : "${WITH_TRAEFIK:=false}"
@@ -1082,7 +1083,7 @@ manage_update_ksf_env_value() {
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       "${key}="*)
-        printf '%s=%s\n' "$key" "$value" >> "$tmp_file"
+        printf '%s=%s\n' "$key" "$(ksf_env_quote_value "$value")" >> "$tmp_file"
         found=true
         ;;
       *)
@@ -1091,7 +1092,7 @@ manage_update_ksf_env_value() {
     esac
   done < "$env_file"
   if [ "$found" = false ]; then
-    printf '%s=%s\n' "$key" "$value" >> "$tmp_file"
+    printf '%s=%s\n' "$key" "$(ksf_env_quote_value "$value")" >> "$tmp_file"
   fi
   mv "$tmp_file" "$env_file"
   chmod 600 "$env_file"
