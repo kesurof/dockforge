@@ -50,6 +50,26 @@ CONFIG_LOADED=false
 NETWORK_NAME_SET=false
 TZ_VALUE_SET=false
 WITH_CROWDSEC=false
+ACME_EMAIL_SET=false
+DOMAIN_SET=false
+CF_API_EMAIL_SET=false
+CF_API_KEY_SET=false
+SERVER_PUBLIC_IP_SET=false
+DNS_AUTO_CREATE_SET=false
+DNS_PROVIDER_SET=false
+TRAEFIK_HOST_SET=false
+TRAEFIK_TRUSTED_IPS_SET=false
+WITH_TRAEFIK_SET=false
+WITH_CROWDSEC_SET=false
+CROWDSEC_BOUNCER_KEY_SET=false
+OAUTH2_ENABLED_SET=false
+OAUTH2_HOST_SET=false
+OAUTH2_CLIENT_ID_SET=false
+OAUTH2_CLIENT_SECRET_SET=false
+OAUTH2_ALLOWED_EMAILS_SET=false
+OAUTH2_GITHUB_USER_SET=false
+OAUTH2_COOKIE_SECRET_SET=false
+TRAEFIK_ONLY_CLI=false
 
 usage() {
   cat <<EOF
@@ -91,25 +111,25 @@ while [[ $# -gt 0 ]]; do
     --base-dir)       BASE_DIR="$2";     shift 2 ;;
     --network)        NETWORK_NAME="$2"; NETWORK_NAME_SET=true; shift 2 ;;
     --tz)             TZ_VALUE="$2"; TZ_VALUE_SET=true; shift 2 ;;
-    --acme-email)     ACME_EMAIL="$2";   shift 2 ;;
-    --domain)         DOMAIN="$2";       shift 2 ;;
-    --cf-api-email)   CF_API_EMAIL="$2"; shift 2 ;;
-    --cf-api-key)     CF_API_KEY="$2";   shift 2 ;;
-    --server-public-ip) SERVER_PUBLIC_IP="$2"; shift 2 ;;
-    --dns-auto-create) DNS_AUTO_CREATE=true; shift ;;
-    --no-dns-auto-create) DNS_AUTO_CREATE=false; shift ;;
-    --dns-provider)    DNS_PROVIDER="$2"; shift 2 ;;
-    --traefik-host)   TRAEFIK_HOST="$2"; shift 2 ;;
-    --traefik-trusted-ips) TRAEFIK_TRUSTED_IPS="$2"; shift 2 ;;
-    --with-traefik)   WITH_TRAEFIK=true; shift ;;
-    --with-crowdsec)  WITH_CROWDSEC=true; WITH_TRAEFIK=true; shift ;;
-    --crowdsec-bouncer-key) CROWDSEC_BOUNCER_KEY="$2"; WITH_CROWDSEC=true; WITH_TRAEFIK=true; shift 2 ;;
-    --oauth-client-id)    OAUTH2_CLIENT_ID="$2"; OAUTH2_ENABLED=true; shift 2 ;;
-    --oauth-client-secret) OAUTH2_CLIENT_SECRET="$2"; OAUTH2_ENABLED=true; shift 2 ;;
-    --oauth-allowed-email) OAUTH2_ALLOWED_EMAILS="${OAUTH2_ALLOWED_EMAILS:+${OAUTH2_ALLOWED_EMAILS},}$2"; OAUTH2_ENABLED=true; shift 2 ;;
-    --oauth-github-user)  OAUTH2_GITHUB_USER="$2"; OAUTH2_ENABLED=true; shift 2 ;;
-    --oauth-host)         OAUTH2_HOST="$2"; shift 2 ;;
-    --oauth-cookie-secret) OAUTH2_COOKIE_SECRET="$2"; OAUTH2_ENABLED=true; shift 2 ;;
+    --acme-email)     ACME_EMAIL="$2"; ACME_EMAIL_SET=true; shift 2 ;;
+    --domain)         DOMAIN="$2"; DOMAIN_SET=true; shift 2 ;;
+    --cf-api-email)   CF_API_EMAIL="$2"; CF_API_EMAIL_SET=true; shift 2 ;;
+    --cf-api-key)     CF_API_KEY="$2"; CF_API_KEY_SET=true; shift 2 ;;
+    --server-public-ip) SERVER_PUBLIC_IP="$2"; SERVER_PUBLIC_IP_SET=true; shift 2 ;;
+    --dns-auto-create) DNS_AUTO_CREATE=true; DNS_AUTO_CREATE_SET=true; shift ;;
+    --no-dns-auto-create) DNS_AUTO_CREATE=false; DNS_AUTO_CREATE_SET=true; shift ;;
+    --dns-provider)    DNS_PROVIDER="$2"; DNS_PROVIDER_SET=true; shift 2 ;;
+    --traefik-host)   TRAEFIK_HOST="$2"; TRAEFIK_HOST_SET=true; shift 2 ;;
+    --traefik-trusted-ips) TRAEFIK_TRUSTED_IPS="$2"; TRAEFIK_TRUSTED_IPS_SET=true; shift 2 ;;
+    --with-traefik)   WITH_TRAEFIK=true; WITH_TRAEFIK_SET=true; shift ;;
+    --with-crowdsec)  WITH_CROWDSEC=true; WITH_CROWDSEC_SET=true; WITH_TRAEFIK=true; WITH_TRAEFIK_SET=true; shift ;;
+    --crowdsec-bouncer-key) CROWDSEC_BOUNCER_KEY="$2"; CROWDSEC_BOUNCER_KEY_SET=true; WITH_CROWDSEC=true; WITH_CROWDSEC_SET=true; WITH_TRAEFIK=true; WITH_TRAEFIK_SET=true; shift 2 ;;
+    --oauth-client-id)    OAUTH2_CLIENT_ID="$2"; OAUTH2_CLIENT_ID_SET=true; OAUTH2_ENABLED=true; OAUTH2_ENABLED_SET=true; shift 2 ;;
+    --oauth-client-secret) OAUTH2_CLIENT_SECRET="$2"; OAUTH2_CLIENT_SECRET_SET=true; OAUTH2_ENABLED=true; OAUTH2_ENABLED_SET=true; shift 2 ;;
+    --oauth-allowed-email) OAUTH2_ALLOWED_EMAILS="${OAUTH2_ALLOWED_EMAILS:+${OAUTH2_ALLOWED_EMAILS},}$2"; OAUTH2_ALLOWED_EMAILS_SET=true; OAUTH2_ENABLED=true; OAUTH2_ENABLED_SET=true; shift 2 ;;
+    --oauth-github-user)  OAUTH2_GITHUB_USER="$2"; OAUTH2_GITHUB_USER_SET=true; OAUTH2_ENABLED=true; OAUTH2_ENABLED_SET=true; shift 2 ;;
+    --oauth-host)         OAUTH2_HOST="$2"; OAUTH2_HOST_SET=true; shift 2 ;;
+    --oauth-cookie-secret) OAUTH2_COOKIE_SECRET="$2"; OAUTH2_COOKIE_SECRET_SET=true; OAUTH2_ENABLED=true; OAUTH2_ENABLED_SET=true; shift 2 ;;
     --dry-run)        DRY_RUN=true;      shift ;;
     --force)          FORCE=true;        shift ;;
     -y|--yes)         AUTO_YES=true;     shift ;;
@@ -117,6 +137,18 @@ while [[ $# -gt 0 ]]; do
     *)                echo "Option inconnue: $1"; usage ;;
   esac
 done
+
+if [ "$WITH_TRAEFIK_SET" = true ] && [ "$WITH_CROWDSEC_SET" = false ] && [ "$OAUTH2_ENABLED_SET" = false ]; then
+  TRAEFIK_ONLY_CLI=true
+fi
+
+validate_execution_allowed() {
+  if [ -f "${BASE_DIR}/config/ksf.env" ] && [ "$FORCE" = false ]; then
+    err "KSF semble déjà installé (${BASE_DIR}/config/ksf.env présent)."
+    err "Relance avec --force pour régénérer : ./deploy.sh --force"
+    exit 1
+  fi
+}
 
 load_existing_deploy_config() {
   local env_file="${BASE_DIR}/config/ksf.env"
@@ -135,7 +167,7 @@ load_existing_deploy_config() {
         [ "${TZ_VALUE_SET}" = false ] && TZ_VALUE="${value}"
         ;;
       DOMAIN)
-        [ -z "${DOMAIN}" ] && DOMAIN="${value}"
+        [ "${DOMAIN_SET}" = false ] && DOMAIN="${value}"
         ;;
       DEFAULT_DOMAIN)
         [ -z "${DEFAULT_DOMAIN}" ] && DEFAULT_DOMAIN="${value}"
@@ -144,19 +176,19 @@ load_existing_deploy_config() {
         [ -z "${DOMAINS}" ] && DOMAINS="${value}"
         ;;
       CF_API_EMAIL)
-        [ -z "${CF_API_EMAIL}" ] && CF_API_EMAIL="${value}"
+        [ "${CF_API_EMAIL_SET}" = false ] && CF_API_EMAIL="${value}"
         ;;
       CF_API_KEY)
-        [ -z "${CF_API_KEY}" ] && CF_API_KEY="${value}"
+        [ "${CF_API_KEY_SET}" = false ] && CF_API_KEY="${value}"
         ;;
       SERVER_PUBLIC_IP)
-        [ -z "${SERVER_PUBLIC_IP}" ] && SERVER_PUBLIC_IP="${value}"
+        [ "${SERVER_PUBLIC_IP_SET}" = false ] && SERVER_PUBLIC_IP="${value}"
         ;;
       DNS_AUTO_CREATE)
-        [ -z "${DNS_AUTO_CREATE}" ] && DNS_AUTO_CREATE="${value}"
+        [ "${DNS_AUTO_CREATE_SET}" = false ] && DNS_AUTO_CREATE="${value}"
         ;;
       DNS_PROVIDER)
-        [ -z "${DNS_PROVIDER}" ] && DNS_PROVIDER="${value}"
+        [ "${DNS_PROVIDER_SET}" = false ] && DNS_PROVIDER="${value}"
         ;;
       DNS_RECORD_TTL)
         [ -z "${DNS_RECORD_TTL}" ] && DNS_RECORD_TTL="${value}"
@@ -165,40 +197,44 @@ load_existing_deploy_config() {
         [ -z "${DNS_RECORD_PROXIED}" ] && DNS_RECORD_PROXIED="${value}"
         ;;
       WITH_TRAEFIK)
-        [ "${WITH_TRAEFIK}" = false ] && WITH_TRAEFIK="${value}"
+        [ "${WITH_TRAEFIK_SET}" = false ] && WITH_TRAEFIK="${value}"
         ;;
       ACME_EMAIL)
-        [ -z "${ACME_EMAIL}" ] && ACME_EMAIL="${value}"
+        [ "${ACME_EMAIL_SET}" = false ] && ACME_EMAIL="${value}"
         ;;
       TRAEFIK_HOST)
-        [ -z "${TRAEFIK_HOST}" ] && TRAEFIK_HOST="${value}"
+        [ "${TRAEFIK_HOST_SET}" = false ] && TRAEFIK_HOST="${value}"
         ;;
       TRAEFIK_TRUSTED_IPS)
-        [ -z "${TRAEFIK_TRUSTED_IPS}" ] && TRAEFIK_TRUSTED_IPS="${value}"
+        [ "${TRAEFIK_TRUSTED_IPS_SET}" = false ] && TRAEFIK_TRUSTED_IPS="${value}"
         ;;
       WITH_CROWDSEC)
-        [ "${WITH_CROWDSEC}" = false ] && WITH_CROWDSEC="${value}"
+        if [ "${WITH_CROWDSEC_SET}" = false ] && [ "${TRAEFIK_ONLY_CLI}" = false ]; then
+          WITH_CROWDSEC="${value}"
+        fi
         ;;
       CROWDSEC_BOUNCER_KEY)
-        [ -z "${CROWDSEC_BOUNCER_KEY}" ] && CROWDSEC_BOUNCER_KEY="${value}"
+        [ "${CROWDSEC_BOUNCER_KEY_SET}" = false ] && CROWDSEC_BOUNCER_KEY="${value}"
         ;;
       OAUTH2_ENABLED)
-        [ "${OAUTH2_ENABLED}" = false ] && OAUTH2_ENABLED="${value}"
+        if [ "${OAUTH2_ENABLED_SET}" = false ] && [ "${TRAEFIK_ONLY_CLI}" = false ]; then
+          OAUTH2_ENABLED="${value}"
+        fi
         ;;
       OAUTH2_HOST)
-        [ -z "${OAUTH2_HOST}" ] && OAUTH2_HOST="${value}"
+        [ "${OAUTH2_HOST_SET}" = false ] && OAUTH2_HOST="${value}"
         ;;
       OAUTH2_CLIENT_ID)
-        [ -z "${OAUTH2_CLIENT_ID}" ] && OAUTH2_CLIENT_ID="${value}"
+        [ "${OAUTH2_CLIENT_ID_SET}" = false ] && OAUTH2_CLIENT_ID="${value}"
         ;;
       OAUTH2_CLIENT_SECRET)
-        [ -z "${OAUTH2_CLIENT_SECRET}" ] && OAUTH2_CLIENT_SECRET="${value}"
+        [ "${OAUTH2_CLIENT_SECRET_SET}" = false ] && OAUTH2_CLIENT_SECRET="${value}"
         ;;
       OAUTH2_ALLOWED_EMAILS)
-        [ -z "${OAUTH2_ALLOWED_EMAILS}" ] && OAUTH2_ALLOWED_EMAILS="${value}"
+        [ "${OAUTH2_ALLOWED_EMAILS_SET}" = false ] && OAUTH2_ALLOWED_EMAILS="${value}"
         ;;
       OAUTH2_GITHUB_USER)
-        [ -z "${OAUTH2_GITHUB_USER}" ] && OAUTH2_GITHUB_USER="${value}"
+        [ "${OAUTH2_GITHUB_USER_SET}" = false ] && OAUTH2_GITHUB_USER="${value}"
         ;;
       OAUTH2_AUTH_MODE)
         [ -z "${OAUTH2_AUTH_MODE}" ] && OAUTH2_AUTH_MODE="${value}"
@@ -213,7 +249,7 @@ load_existing_deploy_config() {
         [ -z "${OAUTH2_AUTHENTICATED_EMAILS_FILE}" ] && OAUTH2_AUTHENTICATED_EMAILS_FILE="${value}"
         ;;
       OAUTH2_COOKIE_SECRET)
-        [ -z "${OAUTH2_COOKIE_SECRET}" ] && OAUTH2_COOKIE_SECRET="${value}"
+        [ "${OAUTH2_COOKIE_SECRET_SET}" = false ] && OAUTH2_COOKIE_SECRET="${value}"
         ;;
     esac
   done < "${env_file}"
@@ -522,6 +558,9 @@ prepare_deploy_config() {
   if [ -z "$DNS_RECORD_PROXIED" ]; then
     DNS_RECORD_PROXIED=true
   fi
+  if [ "$WITH_CROWDSEC" = true ] && [ -z "$TRAEFIK_TRUSTED_IPS" ] && [ "$TRAEFIK_TRUSTED_IPS_SET" = false ]; then
+    TRAEFIK_TRUSTED_IPS=cloudflare
+  fi
   TRAEFIK_TRUSTED_IPS="$(resolve_trusted_ips_value "${TRAEFIK_TRUSTED_IPS}")"
   TRAEFIK_TRUSTED_IPS_YAML="$(format_yaml_inline_list "${TRAEFIK_TRUSTED_IPS}")"
   if [ "$AUTO_YES" = true ] && [ "$DNS_AUTO_CREATE" = true ] && [ -z "$SERVER_PUBLIC_IP" ]; then
@@ -572,7 +611,17 @@ prompt_deploy_questions() {
     [ -n "$DOMAIN" ] && default_traefik_host="traefik.${DOMAIN}"
     ask_text TRAEFIK_HOST "Hostname Traefik" "${default_traefik_host}"
     ask_text ACME_EMAIL "Email Let's Encrypt"
-    ask_text TRAEFIK_TRUSTED_IPS "CIDR proxies de confiance Traefik (vide, cloudflare, ou liste CIDR)"
+    ask_bool WITH_CROWDSEC "Activer CrowdSec pour Traefik"
+    if [ "$WITH_CROWDSEC" = true ]; then
+      WITH_TRAEFIK=true
+      if [ -z "$TRAEFIK_TRUSTED_IPS" ] && [ "$TRAEFIK_TRUSTED_IPS_SET" = false ]; then
+        echo "Trusted IPs Traefik : Cloudflare officiel sera appliqué automatiquement."
+      else
+        echo "Trusted IPs Traefik : $(display_value "${TRAEFIK_TRUSTED_IPS}" "aucune")"
+      fi
+    else
+      ask_text TRAEFIK_TRUSTED_IPS "CIDR proxies de confiance Traefik (vide, cloudflare, ou liste CIDR)"
+    fi
   fi
 
   section_title "5. OAuth2 GitHub"
@@ -586,7 +635,7 @@ prompt_deploy_questions() {
   fi
 
   section_title "6. CrowdSec"
-  ask_bool WITH_CROWDSEC "Activer CrowdSec pour Traefik"
+  echo "CrowdSec est configuré dans la section Traefik."
 }
 
 show_deploy_plan() {
@@ -751,8 +800,9 @@ validate_deploy_config() {
       err "--cf-api-email et --cf-api-key sont requis avec --with-traefik pour le DNS challenge Cloudflare."
       return 1
     fi
-    if [ "$WITH_CROWDSEC" = true ] && [ "${DNS_RECORD_PROXIED:-false}" = true ] && [ -z "$TRAEFIK_TRUSTED_IPS" ]; then
-      warn "Cloudflare proxy semble activé sans --traefik-trusted-ips : CrowdSec peut voir et bannir les IP Cloudflare au lieu des visiteurs."
+    if [ "$WITH_CROWDSEC" = true ] && [ -z "$TRAEFIK_TRUSTED_IPS" ]; then
+      err "CrowdSec nécessite des trusted IPs Traefik sûres. Utilise --traefik-trusted-ips cloudflare ou une liste CIDR explicite."
+      return 1
     fi
   fi
 
@@ -800,13 +850,7 @@ validate_deploy_config() {
   return 0
 }
 
-validate_execution_allowed() {
-  if [ -f "${BASE_DIR}/config/ksf.env" ] && [ "$FORCE" = false ] && [ "$DRY_RUN" = false ]; then
-    err "KSF semble déjà installé (${BASE_DIR}/config/ksf.env présent). Relance avec --force pour régénérer."
-    exit 1
-  fi
-}
-
+validate_execution_allowed
 load_existing_deploy_config
 if [ "$CONFIG_LOADED" = true ]; then
   echo "Configuration existante chargée comme valeurs par défaut"
@@ -828,7 +872,6 @@ else
   show_deploy_plan
 fi
 
-validate_execution_allowed
 validate_deploy_config
 generate_oauth2_cookie_secret
 generate_crowdsec_bouncer_key
