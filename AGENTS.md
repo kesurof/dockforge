@@ -197,6 +197,7 @@ bash -n lib/deploy_steps.sh
 bash -n lib/app_steps.sh
 bash -n lib/manage_steps.sh
 bash -n lib/backup_steps.sh
+bash -n lib/update_steps.sh
 bash -n lib/render.sh
 ```
 

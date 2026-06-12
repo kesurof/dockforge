@@ -279,6 +279,7 @@ fi
 
 source "${SCRIPT_DIR}/lib/manage_steps.sh"
 source "${SCRIPT_DIR}/lib/backup_steps.sh"
+source "${SCRIPT_DIR}/lib/update_steps.sh"
 
 case "$COMMAND" in
   status)
