@@ -37,6 +37,16 @@ _menu_app() {
   bash "${SCRIPT_DIR}/app.sh" "$@"
 }
 
+_menu_cli_path_contains() {
+  local dir="$1"
+  local IFS=':'
+  local p
+  for p in $PATH; do
+    [ "$p" = "$dir" ] && return 0
+  done
+  return 1
+}
+
 _menu_pick_installed_app() {
   local apps=()
   local env_dir="${BASE_DIR}/config/installed-apps"
@@ -331,18 +341,54 @@ _menu_settings() {
         ;;
       3)
         echo ""
-        if command -v ksf >/dev/null 2>&1; then
-          local ksf_path
-          ksf_path="$(command -v ksf)"
-          ok "ksf trouvé : ${ksf_path}"
-          if [ -L "$ksf_path" ]; then
-            local link_target
-            link_target="$(readlink -f "$ksf_path" 2>/dev/null || true)"
-            info "Lien symbolique → ${link_target}"
+        echo "=== Vérification de la commande ksf ==="
+        echo ""
+        local link_path="${HOME}/.local/bin/ksf"
+        local bin_dir
+        bin_dir="$(dirname "$link_path")"
+
+        if [ -L "$link_path" ]; then
+          local link_target
+          link_target="$(readlink -f "$link_path" 2>/dev/null || true)"
+          ok "Lien présent   : ${link_path}"
+          info "Cible du lien  : ${link_target}"
+          if [ -x "$link_target" ] || [ -x "$link_path" ]; then
+            ok "Exécutable     : oui"
+          else
+            warn "Exécutable     : non"
           fi
+        elif [ -e "$link_path" ]; then
+          warn "Lien présent   : ${link_path} (pas un lien symbolique)"
         else
-          warn "ksf non trouvé dans le PATH."
-          echo "  Installe-le avec l'option 1."
+          warn "Lien absent    : ${link_path}"
+        fi
+
+        echo ""
+        if _menu_cli_path_contains "$bin_dir" 2>/dev/null; then
+          ok "~/.local/bin dans PATH actuel : oui"
+        else
+          warn "~/.local/bin dans PATH actuel : non"
+        fi
+
+        if [ -f "${HOME}/.profile" ] && grep -qF "# KSF CLI" "${HOME}/.profile" 2>/dev/null; then
+          ok "Bloc KSF dans ~/.profile      : oui"
+        else
+          warn "Bloc KSF dans ~/.profile      : non"
+        fi
+
+        if [ -f "${HOME}/.bashrc" ] && grep -qF "# KSF CLI" "${HOME}/.bashrc" 2>/dev/null; then
+          ok "Bloc KSF dans ~/.bashrc       : oui"
+        else
+          warn "Bloc KSF dans ~/.bashrc       : non"
+        fi
+
+        echo ""
+        if command -v ksf >/dev/null 2>&1; then
+          ok "command -v ksf → $(command -v ksf)"
+        else
+          warn "command -v ksf → introuvable"
+          echo "  Après installation, reconnecte-toi en SSH ou lance :"
+          echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
         fi
         ;;
       4) return ;;

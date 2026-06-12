@@ -310,6 +310,8 @@ manage_install_cli() {
   local target="${SCRIPT_DIR}/ksf.sh"
   local bin_dir
   bin_dir="$(dirname "$link_path")"
+  local ksf_block="# KSF CLI
+export PATH=\"\$HOME/.local/bin:\$PATH\""
 
   info "Installation de la commande globale ksf..."
   info "Cible : ${target}"
@@ -353,46 +355,14 @@ manage_install_cli() {
   echo ""
   ok "Commande ksf installée : ${link_path}"
 
-  if ! _manage_cli_path_contains "$bin_dir"; then
-    local bashrc="${HOME}/.bashrc"
-    local ksf_block="# KSF CLI
-export PATH=\"\$HOME/.local/bin:\$PATH\""
+  _manage_cli_ensure_path_block "$ksf_block"
 
-    warn "${bin_dir} n'est pas dans le PATH."
+  export PATH="${HOME}/.local/bin:${PATH}"
 
-    if [ -f "$bashrc" ] && grep -qF "# KSF CLI" "$bashrc" 2>/dev/null; then
-      info "Bloc KSF déjà présent dans ${bashrc}."
-    else
-      info "Ajout du bloc PATH dans ${bashrc}..."
-      {
-        echo ""
-        echo "# KSF CLI"
-        echo "export PATH=\"\$HOME/.local/bin:\$PATH\""
-      } >> "$bashrc"
-      ok "Bloc ajouté dans ${bashrc}."
-    fi
-
-    export PATH="${HOME}/.local/bin:${PATH}"
-
-    echo ""
-    if command -v ksf >/dev/null 2>&1; then
-      ok "La commande ksf est disponible."
-    else
-      warn "ksf non trouvé dans le PATH actuel."
-      echo "  source ~/.bashrc"
-      echo "  ou reconnecte-toi en SSH"
-    fi
-  else
-    echo ""
-    info "Vérification :"
-    if command -v ksf >/dev/null 2>&1; then
-      ok "command -v ksf → $(command -v ksf)"
-    else
-      warn "ksf non trouvé dans le PATH actuel."
-      echo "  source ~/.bashrc"
-      echo "  ou reconnecte-toi en SSH"
-    fi
-  fi
+  echo ""
+  ok "Installation terminée. La commande sera disponible après rechargement du shell ou reconnexion SSH."
+  info "Pour une disponibilité immédiate :"
+  echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
 }
 
 manage_uninstall_cli() {
@@ -428,6 +398,48 @@ _manage_cli_confirm() {
     o|O|oui|Oui|OUI|y|Y|yes|Yes|YES) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+_manage_cli_has_path_block() {
+  local file="$1"
+  [ -f "$file" ] && grep -qF "# KSF CLI" "$file" 2>/dev/null
+}
+
+_manage_cli_ensure_path_block() {
+  local profile="${HOME}/.profile"
+  local bashrc="${HOME}/.bashrc"
+
+  if _manage_cli_has_path_block "$profile"; then
+    info "Bloc KSF déjà présent dans ${profile}."
+  else
+    if [ ! -f "$profile" ]; then
+      info "Création de ${profile}..."
+      run touch "$profile"
+    fi
+    info "Ajout du bloc PATH dans ${profile}..."
+    {
+      echo ""
+      echo "# KSF CLI"
+      echo "export PATH=\"\$HOME/.local/bin:\$PATH\""
+    } >> "$profile"
+    ok "Bloc ajouté dans ${profile}."
+  fi
+
+  if _manage_cli_has_path_block "$bashrc"; then
+    info "Bloc KSF déjà présent dans ${bashrc}."
+  else
+    if [ ! -f "$bashrc" ]; then
+      info "Création de ${bashrc}..."
+      run touch "$bashrc"
+    fi
+    info "Ajout du bloc PATH dans ${bashrc}..."
+    {
+      echo ""
+      echo "# KSF CLI"
+      echo "export PATH=\"\$HOME/.local/bin:\$PATH\""
+    } >> "$bashrc"
+    ok "Bloc ajouté dans ${bashrc}."
+  fi
 }
 
 _manage_cli_path_contains() {
