@@ -323,6 +323,12 @@ app_require_docker() {
   fi
 }
 
+_compose_has_build() {
+  local compose_file="$1"
+  [ -f "$compose_file" ] || return 1
+  grep -qE '^\s*build:' "$compose_file" 2>/dev/null
+}
+
 app_compose_run() {
   local app_name="$1"
   local action="$2"
@@ -431,18 +437,30 @@ app_update() {
   fi
 
   if [ "${DRY_RUN:-false}" = true ]; then
-    warn "[DRY-RUN] cd ${APP_MANAGED_DIR} && docker compose pull"
-    warn "[DRY-RUN] cd ${APP_MANAGED_DIR} && docker compose up -d --force-recreate"
-    ok "Simulation de mise à jour de ${APP_MANAGED_NAME} terminée."
+    if _compose_has_build "${APP_MANAGED_DIR}/docker-compose.yml"; then
+      warn "[DRY-RUN] Build local detecte : reconstruction de l'image avant recreation."
+      warn "[DRY-RUN] cd ${APP_MANAGED_DIR} && docker compose up -d --build --force-recreate"
+    else
+      warn "[DRY-RUN] cd ${APP_MANAGED_DIR} && docker compose pull"
+      warn "[DRY-RUN] cd ${APP_MANAGED_DIR} && docker compose up -d --force-recreate"
+    fi
+    ok "Simulation de mise a jour de ${APP_MANAGED_NAME} terminee."
     return 0
   fi
 
   app_require_docker
-  info "Pull ${APP_MANAGED_NAME}..."
-  (cd "${APP_MANAGED_DIR}" && docker compose pull) || { err "Échec docker compose pull pour ${APP_MANAGED_NAME}."; exit 1; }
-  info "Recréation de ${APP_MANAGED_NAME} pour appliquer la configuration..."
-  (cd "${APP_MANAGED_DIR}" && docker compose up -d --force-recreate) || { err "Échec docker compose up -d --force-recreate pour ${APP_MANAGED_NAME}."; exit 1; }
-  ok "App ${APP_MANAGED_NAME} mise à jour."
+
+  if _compose_has_build "${APP_MANAGED_DIR}/docker-compose.yml"; then
+    info "Build local detecte : reconstruction de l'image avant recreation..."
+    (cd "${APP_MANAGED_DIR}" && docker compose up -d --build --force-recreate) || { err "Echec docker compose up -d --build --force-recreate pour ${APP_MANAGED_NAME}."; exit 1; }
+  else
+    info "Pull ${APP_MANAGED_NAME}..."
+    (cd "${APP_MANAGED_DIR}" && docker compose pull) || { err "Echec docker compose pull pour ${APP_MANAGED_NAME}."; exit 1; }
+    info "Recreation de ${APP_MANAGED_NAME} pour appliquer la configuration..."
+    (cd "${APP_MANAGED_DIR}" && docker compose up -d --force-recreate) || { err "Echec docker compose up -d --force-recreate pour ${APP_MANAGED_NAME}."; exit 1; }
+  fi
+
+  ok "App ${APP_MANAGED_NAME} mise a jour."
 }
 
 app_disable() {
@@ -628,15 +646,24 @@ app_install() {
   app_write_env_file "${INSTALLED_DIR}/${app_name}.env" "$app_name" "$app_dir" "$app_data"
 
   if [ "${DRY_RUN:-false}" = true ]; then
-    warn "[DRY-RUN] cd ${app_dir} && docker compose up -d --force-recreate"
-    ok "Simulation d'installation de ${app_name} terminée."
+    if _compose_has_build "${app_dir}/docker-compose.yml"; then
+      warn "[DRY-RUN] Build local detecte : reconstruction de l'image."
+      warn "[DRY-RUN] cd ${app_dir} && docker compose up -d --build --force-recreate"
+    else
+      warn "[DRY-RUN] cd ${app_dir} && docker compose up -d --force-recreate"
+    fi
+    ok "Simulation d'installation de ${app_name} terminee."
   else
-    info "Démarrage de ${app_name}..."
-    if ! (cd "${app_dir}" && docker compose up -d --force-recreate); then
-      err "Échec du démarrage de ${app_name}. Stack générée dans ${app_dir}."
+    info "Demarrage de ${app_name}..."
+    local up_cmd="docker compose up -d --force-recreate"
+    if _compose_has_build "${app_dir}/docker-compose.yml"; then
+      up_cmd="docker compose up -d --build --force-recreate"
+    fi
+    if ! (cd "${app_dir}" && ${up_cmd}); then
+      err "Echec du demarrage de ${app_name}. Stack generee dans ${app_dir}."
       exit 1
     fi
-    ok "App ${app_name} installée et démarrée."
+    ok "App ${app_name} installée et demarree."
   fi
 }
 

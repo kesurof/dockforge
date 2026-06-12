@@ -2,11 +2,21 @@
 {% block title %}Applications - KSF Web{% endblock %}
 {% block content %}
 <h1>Applications KSF</h1>
-<p class="text-muted">{{ apps|length }} app(s) installée(s) — {{ now }}</p>
+<p class="text-muted">{{ apps|length }} app(s) installee(s) — {{ now }}</p>
+
+{% if docker_error %}
+<div class="card card-warning">
+    <div class="status-list">
+        <div class="status-row">
+            <span class="text-warning">{{ docker_error }}</span>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 {% if not apps %}
 <div class="card">
-    <p class="text-muted">Aucune application installée.</p>
+    <p class="text-muted">Aucune application installee.</p>
 </div>
 {% endif %}
 
@@ -20,10 +30,10 @@
                     {{ app.status }}
                 </span>
                 <span class="badge badge-{{ 'success' if app.protected else 'secondary' }}">
-                    {{ 'Protégé' if app.protected else 'Public' }}
+                    {{ 'Protege' if app.protected else 'Public' }}
                 </span>
                 {% if app.disabled %}
-                <span class="badge badge-warning">Désactivé</span>
+                <span class="badge badge-warning">Desactive</span>
                 {% endif %}
             </div>
         </div>
@@ -31,19 +41,19 @@
     <div class="status-list">
         <div class="status-row">
             <span>Domaine</span>
-            <span class="text-mono">{{ app.host or '-' }}</span>
+            <span class="text-mono">{{ app.host if app.host else 'Non defini' }}</span>
         </div>
         <div class="status-row">
             <span>Port</span>
-            <span>{{ app.port or '-' }}</span>
+            <span>{{ app.port if app.port else 'Non defini' }}</span>
         </div>
         <div class="status-row">
-            <span>Répertoire</span>
-            <span class="text-mono text-sm">{{ app.dir or '-' }}</span>
+            <span>Repertoire</span>
+            <span class="text-mono text-sm">{{ app.dir if app.dir else 'Non defini' }}</span>
         </div>
         <div class="status-row">
-            <span>Installé le</span>
-            <span>{{ app.installed_at[:19] if app.installed_at else '-' }}</span>
+            <span>Installe le</span>
+            <span>{{ app.installed_at[:19] if app.installed_at else 'Non defini' }}</span>
         </div>
         {% if app.containers %}
         <div class="status-row">
@@ -61,28 +71,28 @@
         <button class="btn btn-sm btn-primary"
             hx-post="/apps/{{ app.name }}/update"
             hx-on::after-request="showToast(JSON.parse(event.detail.xhr.responseText).message, event.detail.xhr.status === 200)"
-            data-confirm="Mettre à jour {{ app.name }} ?"
+            data-confirm="Mettre a jour {{ app.name }} ?"
             {% if not actions_enabled %}disabled{% endif %}>
             Update
         </button>
         <button class="btn btn-sm"
             hx-post="/apps/{{ app.name }}/restart"
             hx-on::after-request="showToast(JSON.parse(event.detail.xhr.responseText).message, event.detail.xhr.status === 200)"
-            data-confirm="Redémarrer {{ app.name }} ?"
+            data-confirm="Redemarrer {{ app.name }} ?"
             {% if not actions_enabled %}disabled{% endif %}>
             Restart
         </button>
         <button class="btn btn-sm btn-warning"
             hx-post="/apps/{{ app.name }}/disable"
             hx-on::after-request="showToast(JSON.parse(event.detail.xhr.responseText).message, event.detail.xhr.status === 200)"
-            data-confirm-double="Désactiver {{ app.name }} ? Cette action arrêtera le service."
+            data-confirm-double="Desactiver {{ app.name }} ? Cette action arretera le service."
             {% if not actions_enabled %}disabled{% endif %}>
             Disable
         </button>
         <button class="btn btn-sm btn-danger"
             hx-post="/apps/{{ app.name }}/remove"
             hx-on::after-request="showToast(JSON.parse(event.detail.xhr.responseText).message, event.detail.xhr.status === 200)"
-            data-confirm-double="Supprimer {{ app.name }} ? Les données seront préservées mais la stack arrêtée."
+            data-confirm-double="Supprimer {{ app.name }} ? Les donnees seront preservees mais la stack arretee."
             {% if not actions_enabled %}disabled{% endif %}>
             Remove
         </button>

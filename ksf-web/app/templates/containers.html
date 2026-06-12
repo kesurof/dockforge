@@ -4,6 +4,16 @@
 <h1>Containers</h1>
 <p class="text-muted">{{ containers|length }} container(s) — {{ now }}</p>
 
+{% if docker_error %}
+<div class="card card-warning">
+    <div class="status-list">
+        <div class="status-row">
+            <span class="text-warning">{{ docker_error }}</span>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div class="filter-bar">
     <button class="btn btn-sm filter-btn active" onclick="filterContainers('all', this)">Tous</button>
     <button class="btn btn-sm filter-btn" onclick="filterContainers('running', this)">Running</button>

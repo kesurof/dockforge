@@ -1,12 +1,23 @@
 import os
 import subprocess
 import re
+import logging
+
+logger = logging.getLogger("ksf-web")
 
 KSF_BASE_DIR = os.environ.get("KSF_BASE_DIR", "/serverbox")
 KSF_REPO_DIR = os.environ.get("KSF_REPO_DIR", "/ksf")
 INSTALLED_DIR = os.path.join(KSF_BASE_DIR, "config", "installed-apps")
 KSF_BIN = os.path.join(KSF_REPO_DIR, "ksf.sh")
 APP_BIN = os.path.join(KSF_REPO_DIR, "app.sh")
+
+EXEC_ENV = {
+    **os.environ,
+    "KSF_BASE_DIR": KSF_BASE_DIR,
+    "KSF_REPO_DIR": KSF_REPO_DIR,
+    "HOME": "/home/appuser",
+    "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+}
 
 ALLOWED_COMMANDS = {
     "doctor": [KSF_BIN, "doctor"],
@@ -34,7 +45,7 @@ def _validate_app_name(name: str) -> bool:
 
 def run_command(key: str, timeout: int = 120) -> tuple[bool, str]:
     if key not in ALLOWED_COMMANDS:
-        return False, f"Commande non autorisée : {key}"
+        return False, f"Commande non autorisee : {key}"
     cmd = ALLOWED_COMMANDS[key]
     try:
         result = subprocess.run(
@@ -42,17 +53,19 @@ def run_command(key: str, timeout: int = 120) -> tuple[bool, str]:
             capture_output=True,
             text=True,
             timeout=timeout,
-            env={**os.environ, "HOME": os.environ.get("HOME", "/home/appuser")},
+            cwd=KSF_REPO_DIR,
+            env=EXEC_ENV,
         )
         output = result.stdout + result.stderr
         output = _mask_secrets(output)
         return result.returncode == 0, output.strip()
     except subprocess.TimeoutExpired:
-        return False, "La commande a expiré (timeout)."
+        return False, "La commande a expire (timeout)."
     except FileNotFoundError:
         return False, f"Script introuvable : {cmd[0]}"
     except Exception as e:
-        return False, f"Erreur : {e}"
+        logger.exception("Erreur lors de l'execution de %s", key)
+        return False, f"Erreur interne : {type(e).__name__}"
 
 
 def run_app_command(app_name: str, action: str, timeout: int = 120) -> tuple[bool, str]:
@@ -60,7 +73,7 @@ def run_app_command(app_name: str, action: str, timeout: int = 120) -> tuple[boo
         return False, "Nom d'application invalide."
     allowed_actions = {"status", "update", "restart", "disable", "remove"}
     if action not in allowed_actions:
-        return False, f"Action non autorisée : {action}"
+        return False, f"Action non autorisee : {action}"
     cmd = [APP_BIN, action, app_name]
     if action in ("update", "disable", "remove"):
         cmd.append("--yes")
@@ -70,32 +83,61 @@ def run_app_command(app_name: str, action: str, timeout: int = 120) -> tuple[boo
             capture_output=True,
             text=True,
             timeout=timeout,
-            env={**os.environ, "HOME": os.environ.get("HOME", "/home/appuser")},
+            cwd=KSF_REPO_DIR,
+            env=EXEC_ENV,
         )
         output = result.stdout + result.stderr
         output = _mask_secrets(output)
         return result.returncode == 0, output.strip()
     except subprocess.TimeoutExpired:
-        return False, "La commande a expiré (timeout)."
+        return False, "La commande a expire (timeout)."
     except FileNotFoundError:
         return False, f"Script introuvable : {cmd[0]}"
     except Exception as e:
-        return False, f"Erreur : {e}"
+        logger.exception("Erreur lors de l'execution de %s %s", action, app_name)
+        return False, f"Erreur interne : {type(e).__name__}"
 
 
 def list_installed_apps() -> list[dict]:
     apps = []
     if not os.path.isdir(INSTALLED_DIR):
         return apps
+
+    ksf_env = get_ksf_env()
+    domain = ksf_env.get("DOMAIN", ksf_env.get("DOMAINS", ""))
+    if domain:
+        domain = domain.split(",")[0].strip()
+
     for fname in sorted(os.listdir(INSTALLED_DIR)):
         if not fname.endswith(".env"):
             continue
         app_name = fname[:-4]
         env_path = os.path.join(INSTALLED_DIR, fname)
         env_data = _parse_env_file(env_path)
+
+        app_host = env_data.get("APP_HOST", "")
+        app_domain = env_data.get("APP_DOMAIN", "")
+        if not app_host and app_domain:
+            app_host = app_domain
+        if app_host and domain and "." not in app_host:
+            app_host = f"{app_host}.{domain}"
+
+        runtime_dir = env_data.get("APP_DIR", os.path.join(KSF_BASE_DIR, "apps", app_name))
+        runtime_env_path = os.path.join(runtime_dir, "app.env")
+        if os.path.isfile(runtime_env_path):
+            runtime_data = _parse_env_file(runtime_env_path)
+            if not app_host:
+                rh = runtime_data.get("APP_HOST", "")
+                rd = runtime_data.get("APP_DOMAIN", "")
+                if not rh and rd:
+                    rh = rd
+                if rh and domain and "." not in rh:
+                    rh = f"{rh}.{domain}"
+                app_host = rh
+
         apps.append({
             "name": app_name,
-            "host": env_data.get("APP_HOST", ""),
+            "host": app_host or "",
             "port": env_data.get("APP_PORT", ""),
             "protected": env_data.get("APP_PROTECTED", "true") == "true",
             "disabled": env_data.get("APP_DISABLED", "false") == "true",
@@ -114,17 +156,49 @@ def get_ksf_env() -> dict:
     return _parse_env_file(env_path)
 
 
-def list_backups() -> list[dict]:
+def get_appsec_state() -> str:
+    """Returns 'active', 'inactive', or 'indeterminate'."""
+    ksf_env = get_ksf_env()
+    appsec_enabled = ksf_env.get("CROWDSEC_APPSEC_ENABLED", "false").lower() == "true"
+    if not appsec_enabled:
+        return "inactive"
+    appsec_yaml = os.path.join(KSF_BASE_DIR, "proxy", "crowdsec", "appsec.yaml")
+    if os.path.isfile(appsec_yaml):
+        return "active"
+    return "indeterminate"
+
+
+def list_backups() -> tuple[list[dict], str | None]:
+    """Returns (backups_list, error_or_None).
+
+    Only .tar.gz files are considered backups.
+    .sha256 files are never listed as backup archives.
+    """
     backups_dir = os.path.join(KSF_BASE_DIR, "backups")
     if not os.path.isdir(backups_dir):
-        return []
+        return [], None
+
+    try:
+        all_files = os.listdir(backups_dir)
+    except PermissionError:
+        return [], "Backups non lisibles par ksf-web."
+    except OSError as e:
+        logger.exception("Erreur lecture dossier backups")
+        return [], f"Erreur lecture backups : {e}"
+
     backups = []
-    for fname in sorted(os.listdir(backups_dir), reverse=True):
+    for fname in sorted(all_files, reverse=True):
+        if not fname.endswith(".tar.gz"):
+            continue
         fpath = os.path.join(backups_dir, fname)
         if not os.path.isfile(fpath):
             continue
-        stat = os.stat(fpath)
-        has_checksum = os.path.isfile(f"{fpath}.sha256")
+        try:
+            stat = os.stat(fpath)
+        except OSError:
+            continue
+        checksum_file = f"{fpath}.sha256"
+        has_checksum = os.path.isfile(checksum_file)
         backups.append({
             "name": fname,
             "size": _format_size(stat.st_size),
@@ -132,9 +206,11 @@ def list_backups() -> list[dict]:
             "created": _format_timestamp(stat.st_mtime),
             "has_checksum": has_checksum,
         })
+
     if backups:
         backups[0]["is_latest"] = True
-    return backups
+
+    return backups, None
 
 
 def _parse_env_file(path: str) -> dict:
@@ -162,10 +238,15 @@ def _parse_env_file(path: str) -> dict:
 
 def _mask_secrets(text: str) -> str:
     sensitive_patterns = [
-        re.compile(r"(SECRET|TOKEN|PASSWORD|COOKIE|CLIENT_SECRET|CF_API_KEY|BOUNCER_KEY)\s*[=:]\s*\S+", re.IGNORECASE),
+        re.compile(
+            r"(SECRET|TOKEN|PASSWORD|COOKIE|CLIENT_SECRET|CF_API_KEY|BOUNCER_KEY)\s*[=:]\s*\S+",
+            re.IGNORECASE,
+        ),
     ]
     for pattern in sensitive_patterns:
-        text = pattern.sub(lambda m: m.group(0).split("=")[0].strip() + "= ******", text)
+        text = pattern.sub(
+            lambda m: m.group(0).split("=")[0].strip() + "= ******", text
+        )
     return text
 
 
@@ -179,4 +260,5 @@ def _format_size(size_bytes: int) -> str:
 
 def _format_timestamp(ts: float) -> str:
     from datetime import datetime, timezone
+
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")

@@ -68,6 +68,7 @@ body {
     box-shadow: var(--shadow);
 }
 .card h2 { font-size: 1rem; margin-bottom: 0.75rem; color: var(--text-muted); font-weight: 600; }
+.card-warning { border-color: var(--warning); }
 
 /* Grid */
 .grid { display: grid; gap: 1rem; }

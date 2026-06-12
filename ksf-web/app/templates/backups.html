@@ -10,15 +10,15 @@
         <button class="btn btn-primary"
             hx-post="/backups/create"
             hx-on::after-request="showToast(JSON.parse(event.detail.xhr.responseText).message, event.detail.xhr.status === 200)"
-            data-confirm="Créer un backup maintenant ?"
+            data-confirm="Creer un backup maintenant ?"
             {% if not actions_enabled %}disabled{% endif %}>
-            Créer backup
+            Creer backup
         </button>
         <button class="btn btn-sm"
             hx-post="/backups/verify"
             hx-on::after-request="showToast(JSON.parse(event.detail.xhr.responseText).message, event.detail.xhr.status === 200)"
             {% if not actions_enabled %}disabled{% endif %}>
-            Vérifier latest
+            Verifier latest
         </button>
         <button class="btn btn-sm btn-warning"
             hx-post="/backups/restore-dryrun"
@@ -30,9 +30,19 @@
     </div>
 </div>
 
-{% if not backups %}
+{% if backups_error %}
+<div class="card card-warning">
+    <div class="status-list">
+        <div class="status-row">
+            <span class="text-warning">{{ backups_error }}</span>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if not backups and not backups_error %}
 <div class="card">
-    <p class="text-muted">Aucun backup trouvé.</p>
+    <p class="text-muted">Aucun backup trouve.</p>
 </div>
 {% endif %}
 
@@ -58,7 +68,7 @@
                     <td>{{ b.size }}</td>
                     <td>
                         <span class="badge badge-{{ 'success' if b.has_checksum else 'warning' }}">
-                            {{ 'Présent' if b.has_checksum else 'Absent' }}
+                            {{ 'Present' if b.has_checksum else 'Absent' }}
                         </span>
                     </td>
                     <td>
