@@ -1607,6 +1607,16 @@ manage_doctor() {
     [ "$orphan_count" -eq 0 ] && _manage_check ok "Fichiers" "Aucune route orpheline"
   fi
 
+  # 11. Backups locaux
+  if declare -F backup_doctor_checks >/dev/null 2>&1; then
+    local backup_warnings=0
+    backup_doctor_checks || backup_warnings=$?
+    warnings=$((warnings + backup_warnings))
+  else
+    _manage_check warn "Backups" "module backup indisponible"
+    ((warnings++)) || true
+  fi
+
   echo ""
   local total_issues=$((errors + warnings))
   if [ "$total_issues" -eq 0 ]; then

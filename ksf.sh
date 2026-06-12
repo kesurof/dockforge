@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================
 # KSF — Gestion de l'infrastructure existante
-# Status, config, routes, render, restart, protect, doctor, clean-data, CrowdSec, trusted IPs
+# Status, config, routes, render, restart, protect, doctor, clean-data, backup, CrowdSec, trusted IPs
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -13,6 +13,9 @@ source "${SCRIPT_DIR}/lib/render.sh"
 BASE_DIR="${HOME}/serverbox"
 COMMAND=""
 CLEAN_DATA_APP=""
+BACKUP_COMMAND=""
+BACKUP_ARG=""
+BACKUP_KEEP="5"
 CROWDSEC_COMMAND=""
 CROWDSEC_ARG=""
 CROWDSEC_DURATION=""
@@ -33,6 +36,7 @@ Commandes :
   render                Régénérer les fichiers dynamiques Traefik
   restart               Relancer Traefik, OAuth2 Proxy et CrowdSec
   doctor                Diagnostic global de la plateforme
+  backup <commande>     Sauvegarder/restaurer KSF (create, list, status, verify, restore, prune)
   crowdsec <commande>   Gérer CrowdSec (status, logs, decisions, alerts, metrics, bouncers, ban, unban, flush-decisions, enroll, console-status, restart, appsec)
   trusted-ips cloudflare  Afficher les CIDR Cloudflare prêts pour TRAEFIK_TRUSTED_IPS
   trusted-ips apply cloudflare  Appliquer les CIDR Cloudflare et redémarrer Traefik
@@ -52,6 +56,13 @@ Exemples :
   $0 render
   $0 restart
   $0 doctor
+  $0 backup create
+  $0 backup list
+  $0 backup status
+  $0 backup verify ksf-backup-YYYYMMDD-HHMMSS.tar.gz
+  $0 backup restore ksf-backup-YYYYMMDD-HHMMSS.tar.gz
+  $0 backup prune --dry-run
+  $0 backup prune -y
   $0 crowdsec status
   $0 crowdsec logs
   $0 crowdsec decisions
@@ -133,11 +144,41 @@ while [[ $# -gt 0 ]]; do
             ;;
         esac
         ;;
+      backup)
+        case "$1" in
+          --base-dir|--dry-run|-y|--yes|-h|--help) ;;
+          --keep)
+            if [ $# -lt 2 ]; then
+              err "Valeur manquante pour --keep"
+              exit 1
+            fi
+            BACKUP_KEEP="$2"
+            shift 2
+            continue
+            ;;
+          *)
+            if [ -z "$BACKUP_COMMAND" ]; then
+              BACKUP_COMMAND="$1"
+              shift
+              continue
+            fi
+            if [ -z "$BACKUP_ARG" ]; then
+              case "$BACKUP_COMMAND" in
+                verify|restore)
+                  BACKUP_ARG="$1"
+                  shift
+                  continue
+                  ;;
+              esac
+            fi
+            ;;
+        esac
+        ;;
     esac
   fi
 
   case "$1" in
-    status|config|routes|protect|render|restart|doctor|clean-data|crowdsec|trusted-ips)
+    status|config|routes|protect|render|restart|doctor|clean-data|backup|crowdsec|trusted-ips)
       if [ -n "$COMMAND" ]; then
         err "Commande déjà définie : ${COMMAND}"
         exit 1
@@ -181,6 +222,27 @@ while [[ $# -gt 0 ]]; do
       elif [ "$COMMAND" = "crowdsec" ] && [ -z "$CROWDSEC_DURATION" ] && [ "$CROWDSEC_COMMAND" = "ban" ]; then
         CROWDSEC_DURATION="$1"
         shift
+      elif [ "$COMMAND" = "backup" ] && [ -z "$BACKUP_COMMAND" ]; then
+        BACKUP_COMMAND="$1"
+        shift
+      elif [ "$COMMAND" = "backup" ] && [ "$1" = "--keep" ]; then
+        if [ $# -lt 2 ]; then
+          err "Valeur manquante pour --keep"
+          exit 1
+        fi
+        BACKUP_KEEP="$2"
+        shift 2
+      elif [ "$COMMAND" = "backup" ] && [ -z "$BACKUP_ARG" ]; then
+        case "$BACKUP_COMMAND" in
+          verify|restore)
+            BACKUP_ARG="$1"
+            shift
+            ;;
+          *)
+            err "Argument inconnu : $1"
+            usage
+            ;;
+        esac
       else
         err "Argument inconnu : $1"
         usage
@@ -194,6 +256,7 @@ if [ -z "$COMMAND" ]; then
 fi
 
 source "${SCRIPT_DIR}/lib/manage_steps.sh"
+source "${SCRIPT_DIR}/lib/backup_steps.sh"
 
 case "$COMMAND" in
   status)
@@ -219,6 +282,9 @@ case "$COMMAND" in
     ;;
   clean-data)
     manage_clean_data "${CLEAN_DATA_APP}"
+    ;;
+  backup)
+    manage_backup "${BACKUP_COMMAND}" "${BACKUP_ARG}"
     ;;
   crowdsec)
     manage_crowdsec "${CROWDSEC_COMMAND}" "${CROWDSEC_ARG}" "${CROWDSEC_DURATION}"

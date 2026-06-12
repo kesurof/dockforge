@@ -78,6 +78,9 @@ Infrastructure :
 ./ksf.sh doctor
 ./ksf.sh render
 ./ksf.sh restart
+./ksf.sh backup create
+./ksf.sh backup list
+./ksf.sh backup status
 ./ksf.sh crowdsec status
 ./ksf.sh crowdsec logs
 ./ksf.sh crowdsec decisions
@@ -148,6 +151,50 @@ https://oauth2.<domaine>/oauth2/callback
 ```
 
 Ne mettez jamais les secrets GitHub dans le dépôt.
+
+## Sauvegarde et restauration
+
+Les sauvegardes KSF servent à restaurer la configuration critique d'une plateforme déjà installée : configuration KSF, métadonnées des apps, stacks applicatives, routes Traefik, OAuth2 Proxy, CrowdSec et ACME Traefik si présents.
+
+Elles n'incluent pas les logs volumineux, les caches, les volumes Docker complets ni les données applicatives lourdes de `~/serverbox/data` par défaut.
+
+Créer une sauvegarde :
+
+```bash
+./ksf.sh backup create
+```
+
+Lister les sauvegardes :
+
+```bash
+./ksf.sh backup list
+```
+
+Vérifier une sauvegarde :
+
+```bash
+./ksf.sh backup verify ksf-backup-YYYYMMDD-HHMMSS.tar.gz
+```
+
+Restaurer une sauvegarde :
+
+```bash
+./ksf.sh backup restore ksf-backup-YYYYMMDD-HHMMSS.tar.gz
+```
+
+Simuler une restauration sans modifier le serveur :
+
+```bash
+./ksf.sh backup restore ksf-backup-YYYYMMDD-HHMMSS.tar.gz --dry-run
+```
+
+Nettoyer les anciennes sauvegardes locales :
+
+```bash
+./ksf.sh backup prune
+```
+
+Les archives sont stockées dans `~/serverbox/backups` avec un fichier `.sha256` associé. Elles peuvent contenir des secrets nécessaires à la restauration ; gardez-les privées et ne les commitez jamais.
 
 ## CrowdSec
 
