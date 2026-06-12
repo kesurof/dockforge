@@ -721,7 +721,8 @@ manage_crowdsec_unban() {
 }
 
 manage_crowdsec_flush_decisions() {
-  manage_crowdsec_cscli "decisions flush" decisions flush || { err "Impossible de purger les décisions CrowdSec."; exit 1; }
+  warn "Cette commande supprime toutes les décisions CrowdSec actives."
+  manage_crowdsec_cscli "decisions delete --all" decisions delete --all || { err "Impossible de supprimer toutes les décisions CrowdSec."; exit 1; }
 }
 
 manage_crowdsec_extract_enroll_token() {

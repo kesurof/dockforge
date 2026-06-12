@@ -192,7 +192,7 @@ Commandes utiles :
 ./ksf.sh trusted-ips apply cloudflare
 ```
 
-Ces commandes appellent `cscli` dans le conteneur CrowdSec via Docker Compose. Les décisions locales restent gérées par `cscli` : `decisions` liste les décisions actives, `ban` ajoute une décision locale, `unban` la supprime, et `flush-decisions` vide les décisions locales.
+Ces commandes appellent `cscli` dans le conteneur CrowdSec via Docker Compose. Les décisions locales restent gérées par `cscli` : `decisions` liste les décisions actives, `ban` ajoute une décision locale, `unban` la supprime, et `flush-decisions` exécute `cscli decisions delete --all`. `flush-decisions` est destructif : il supprime toutes les décisions actives.
 
 Connexion à la Console CrowdSec officielle :
 
