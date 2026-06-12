@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Applications - KSF Web{% endblock %}
+{% block content %}
+<h1>Applications KSF</h1>
+<p class="text-muted">{{ apps|length }} app(s) installée(s) — {{ now }}</p>
+
+{% if not apps %}
+<div class="card">
+    <p class="text-muted">Aucune application installée.</p>
+</div>
+{% endif %}
+
+{% for app in apps %}
+<div class="card app-card">
+    <div class="app-header">
+        <div>
+            <h2 class="app-name">{{ app.name }}</h2>
+            <div class="flex gap-sm">
+                <span class="badge badge-{{ 'success' if app.status == 'running' else 'danger' }}">
+                    {{ app.status }}
+                </span>
+                <span class="badge badge-{{ 'success' if app.protected else 'secondary' }}">
+                    {{ 'Protégé' if app.protected else 'Public' }}
+                </span>
+                {% if app.disabled %}
+                <span class="badge badge-warning">Désactivé</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="status-list">
+        <div class="status-row">
+            <span>Domaine</span>
+            <span class="text-mono">{{ app.host or '-' }}</span>
+        </div>
+        <div class="status-row">
+            <span>Port</span>
+            <span>{{ app.port or '-' }}</span>
+        </div>
+        <div class="status-row">
+            <span>Répertoire</span>
+            <span class="text-mono text-sm">{{ app.dir or '-' }}</span>
+        </div>
+        <div class="status-row">
+            <span>Installé le</span>
+            <span>{{ app.installed_at[:19] if app.installed_at else '-' }}</span>
+        </div>
+        {% if app.containers %}
+        <div class="status-row">
+            <span>Containers</span>
+            <span>
+                {% for c in app.containers %}
+                <a href="/containers/{{ c.name }}" class="text-mono text-sm">{{ c.name }}</a>
+                <span class="badge badge-{{ 'success' if c.status == 'running' else 'danger' }}">{{ c.status }}</span>
+                {% endfor %}
+            </span>
+        </div>
+        {% endif %}
+    </div>
+    <div class="app-actions">
+        <button class="btn btn-sm btn-primary"
+            hx-post="/apps/{{ app.name }}/update"
+            hx-on::after-request="showToast(JSON.parse(event.detail.xhr.responseText).message, event.detail.xhr.status === 200)"
+            data-confirm="Mettre à jour {{ app.name }} ?"
+            {% if not actions_enabled %}disabled{% endif %}>
+            Update
+        </button>
+        <button class="btn btn-sm"
+            hx-post="/apps/{{ app.name }}/restart"
+            hx-on::after-request="showToast(JSON.parse(event.detail.xhr.responseText).message, event.detail.xhr.status === 200)"
+            data-confirm="Redémarrer {{ app.name }} ?"
+            {% if not actions_enabled %}disabled{% endif %}>
+            Restart
+        </button>
+        <button class="btn btn-sm btn-warning"
+            hx-post="/apps/{{ app.name }}/disable"
+            hx-on::after-request="showToast(JSON.parse(event.detail.xhr.responseText).message, event.detail.xhr.status === 200)"
+            data-confirm-double="Désactiver {{ app.name }} ? Cette action arrêtera le service."
+            {% if not actions_enabled %}disabled{% endif %}>
+            Disable
+        </button>
+        <button class="btn btn-sm btn-danger"
+            hx-post="/apps/{{ app.name }}/remove"
+            hx-on::after-request="showToast(JSON.parse(event.detail.xhr.responseText).message, event.detail.xhr.status === 200)"
+            data-confirm-double="Supprimer {{ app.name }} ? Les données seront préservées mais la stack arrêtée."
+            {% if not actions_enabled %}disabled{% endif %}>
+            Remove
+        </button>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}

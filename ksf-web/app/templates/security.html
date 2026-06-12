@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Sécurité - KSF Web{% endblock %}
+{% block content %}
+<h1>Sécurité</h1>
+<p class="text-muted">{{ now }}</p>
+
+<div class="grid grid-2">
+    <div class="card">
+        <h2>CrowdSec</h2>
+        <div class="status-list">
+            <div class="status-row">
+                <span>Statut</span>
+                <span class="badge {{ 'badge-success' if crowdsec_enabled else 'badge-secondary' }}">
+                    {{ 'Activé' if crowdsec_enabled else 'Désactivé' }}
+                </span>
+            </div>
+            <div class="status-row">
+                <span>AppSec / WAF</span>
+                <span class="badge {{ 'badge-success' if appsec_enabled else 'badge-secondary' }}">
+                    {{ 'Activé' if appsec_enabled else 'Désactivé' }}
+                </span>
+            </div>
+        </div>
+        <div class="mt-sm">
+            <button class="btn btn-sm"
+                hx-post="/security/refresh"
+                hx-target="#security-refresh-result"
+                hx-swap="innerHTML"
+                {% if not actions_enabled %}disabled{% endif %}>
+                Rafraîchir alertes
+            </button>
+        </div>
+        <div id="security-refresh-result"></div>
+    </div>
+
+    <div class="card">
+        <h2>Actions</h2>
+        <div class="btn-group">
+            <button class="btn btn-primary"
+                hx-post="/system/doctor"
+                hx-target="#doctor-result"
+                hx-indicator="#sec-doctor-indicator"
+                {% if not actions_enabled %}disabled{% endif %}>
+                <span id="sec-doctor-indicator" class="htmx-indicator spinner"></span>
+                Lancer doctor
+            </button>
+        </div>
+        <div id="doctor-result" class="action-result"></div>
+    </div>
+</div>
+
+{% if crowdsec_enabled %}
+<div class="card">
+    <h2>Statut CrowdSec</h2>
+    <pre class="logs-block">{{ crowdsec_status or 'Indisponible' }}</pre>
+</div>
+
+<div class="card">
+    <h2>Alertes CrowdSec</h2>
+    <pre class="logs-block">{{ crowdsec_alerts or 'Aucune alerte ou indisponible' }}</pre>
+</div>
+
+<div class="card">
+    <h2>Bouncers</h2>
+    <pre class="logs-block">{{ crowdsec_bouncers or 'Aucun bouncer ou indisponible' }}</pre>
+</div>
+{% endif %}
+
+{% if appsec_enabled %}
+<div class="card">
+    <h2>Statut AppSec / WAF</h2>
+    <pre class="logs-block">{{ appsec_status or 'Indisponible' }}</pre>
+</div>
+{% endif %}
+
+{% if not crowdsec_enabled %}
+<div class="card">
+    <p class="text-muted">CrowdSec n'est pas activé sur cette instance.</p>
+</div>
+{% endif %}
+{% endblock %}

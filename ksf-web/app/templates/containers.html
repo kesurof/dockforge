@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Containers - KSF Web{% endblock %}
+{% block content %}
+<h1>Containers</h1>
+<p class="text-muted">{{ containers|length }} container(s) — {{ now }}</p>
+
+<div class="filter-bar">
+    <button class="btn btn-sm filter-btn active" onclick="filterContainers('all', this)">Tous</button>
+    <button class="btn btn-sm filter-btn" onclick="filterContainers('running', this)">Running</button>
+    <button class="btn btn-sm filter-btn" onclick="filterContainers('stopped', this)">Stopped</button>
+    <button class="btn btn-sm filter-btn" onclick="filterContainers('core', this)">Core KSF</button>
+    <button class="btn btn-sm filter-btn" onclick="filterContainers('app', this)">App KSF</button>
+    <button class="btn btn-sm filter-btn" onclick="filterContainers('other', this)">Autre</button>
+</div>
+
+<div id="containers-list">
+{% for c in containers %}
+<div class="card container-card" data-status="{{ c.status }}" data-type="{{ c.type }}">
+    <div class="container-header">
+        <div class="container-name">
+            <a href="/containers/{{ c.name }}">{{ c.name }}</a>
+            <span class="badge badge-{{ 'success' if c.status == 'running' else 'danger' if c.status in ('exited', 'dead') else 'warning' if c.status == 'restarting' else 'secondary' }}">
+                {{ c.status }}
+            </span>
+            {% if c.health and c.health != '-' %}
+            <span class="badge badge-{{ 'success' if c.health == 'healthy' else 'danger' if c.health == 'unhealthy' else 'warning' }}">
+                {{ c.health }}
+            </span>
+            {% endif %}
+            <span class="badge badge-{{ 'primary' if c.type == 'core' else 'info' if c.type == 'app' else 'secondary' }}">
+                {{ c.type }}
+            </span>
+        </div>
+    </div>
+    <div class="container-meta">
+        <span class="text-muted">Image:</span> <span class="text-mono text-sm">{{ c.image }}</span>
+        <span class="text-muted">Uptime:</span> {{ c.uptime }}
+        {% if c.ports %}
+        <span class="text-muted">Ports:</span> <span class="text-mono text-sm">{{ c.ports|join(', ') }}</span>
+        {% endif %}
+        {% if c.networks %}
+        <span class="text-muted">Réseaux:</span> {{ c.networks|join(', ') }}
+        {% endif %}
+    </div>
+    <div class="container-actions">
+        <a href="/containers/{{ c.name }}" class="btn btn-sm">Détails</a>
+        <button class="btn btn-sm"
+            hx-get="/containers/{{ c.name }}/logs?lines=50"
+            hx-target="#logs-{{ c.name }}"
+            hx-swap="innerHTML">
+            Logs
+        </button>
+        <button class="btn btn-sm btn-warning"
+            hx-post="/containers/{{ c.name }}/restart"
+            hx-on::after-request="showToast(JSON.parse(event.detail.xhr.responseText).message, event.detail.xhr.status === 200)"
+            data-confirm="Redémarrer {{ c.name }} ?">
+            Redémarrer
+        </button>
+    </div>
+    <pre id="logs-{{ c.name }}" class="logs-preview" style="display:none"></pre>
+</div>
+{% endfor %}
+</div>
+
+<script>
+function filterContainers(filter, btn) {
+    document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    document.querySelectorAll('.container-card').forEach(function(card) {
+        var status = card.getAttribute('data-status');
+        var type = card.getAttribute('data-type');
+        var show = false;
+        if (filter === 'all') { show = true; }
+        else if (filter === 'running') { show = status === 'running'; }
+        else if (filter === 'stopped') { show = status !== 'running'; }
+        else { show = type === filter; }
+        card.style.display = show ? '' : 'none';
+    });
+}
+</script>
+{% endblock %}

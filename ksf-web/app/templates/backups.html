@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Backups - KSF Web{% endblock %}
+{% block content %}
+<h1>Backups</h1>
+<p class="text-muted">{{ backups|length }} backup(s) — {{ now }}</p>
+
+<div class="card">
+    <h2>Actions</h2>
+    <div class="btn-group">
+        <button class="btn btn-primary"
+            hx-post="/backups/create"
+            hx-on::after-request="showToast(JSON.parse(event.detail.xhr.responseText).message, event.detail.xhr.status === 200)"
+            data-confirm="Créer un backup maintenant ?"
+            {% if not actions_enabled %}disabled{% endif %}>
+            Créer backup
+        </button>
+        <button class="btn btn-sm"
+            hx-post="/backups/verify"
+            hx-on::after-request="showToast(JSON.parse(event.detail.xhr.responseText).message, event.detail.xhr.status === 200)"
+            {% if not actions_enabled %}disabled{% endif %}>
+            Vérifier latest
+        </button>
+        <button class="btn btn-sm btn-warning"
+            hx-post="/backups/restore-dryrun"
+            hx-on::after-request="showToast(JSON.parse(event.detail.xhr.responseText).message, event.detail.xhr.status === 200)"
+            data-confirm="Simuler la restauration du dernier backup ?"
+            {% if not actions_enabled %}disabled{% endif %}>
+            Restore latest (dry-run)
+        </button>
+    </div>
+</div>
+
+{% if not backups %}
+<div class="card">
+    <p class="text-muted">Aucun backup trouvé.</p>
+</div>
+{% endif %}
+
+{% if backups %}
+<div class="card">
+    <h2>Backups disponibles</h2>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th>Nom</th>
+                    <th>Date</th>
+                    <th>Taille</th>
+                    <th>Checksum</th>
+                    <th>Latest</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for b in backups %}
+                <tr>
+                    <td class="text-mono">{{ b.name }}</td>
+                    <td>{{ b.created }}</td>
+                    <td>{{ b.size }}</td>
+                    <td>
+                        <span class="badge badge-{{ 'success' if b.has_checksum else 'warning' }}">
+                            {{ 'Présent' if b.has_checksum else 'Absent' }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if b.get('is_latest') %}
+                        <span class="badge badge-primary">Latest</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

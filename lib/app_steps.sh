@@ -4,6 +4,7 @@
 
 APP_TEMPLATE_DIR="${SCRIPT_DIR}/templates/apps"
 INSTALLED_DIR="${BASE_DIR}/config/installed-apps"
+: "${KSF_REPO_DIR:=${SCRIPT_DIR}}"
 
 if [ -f "${SCRIPT_DIR}/lib/dns_cloudflare.sh" ]; then
   # shellcheck disable=SC1091

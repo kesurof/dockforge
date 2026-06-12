@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}KSF Web{% endblock %}</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">KSF Web</div>
+        <button class="nav-toggle" onclick="this.parentElement.classList.toggle('open')">☰</button>
+        <div class="nav-links">
+            <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}">Dashboard</a>
+            <a href="/containers" class="nav-link {% if '/containers' in request.url.path %}active{% endif %}">Containers</a>
+            <a href="/apps" class="nav-link {% if '/apps' in request.url.path %}active{% endif %}">Apps</a>
+            <a href="/backups" class="nav-link {% if '/backups' in request.url.path %}active{% endif %}">Backups</a>
+            <a href="/security" class="nav-link {% if '/security' in request.url.path %}active{% endif %}">Sécurité</a>
+        </div>
+    </nav>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+    <div id="toast-container"></div>
+    <script>
+        function showToast(message, success) {
+            var container = document.getElementById('toast-container');
+            var toast = document.createElement('div');
+            toast.className = 'toast ' + (success ? 'toast-success' : 'toast-error');
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(function() { toast.classList.add('show'); }, 10);
+            setTimeout(function() { toast.classList.remove('show'); setTimeout(function() { toast.remove(); }, 300); }, 4000);
+        }
+        document.body.addEventListener('htmx:responseError', function(e) {
+            showToast('Erreur réseau', false);
+        });
+        document.body.addEventListener('click', function(e) {
+            var btn = e.target.closest('[data-confirm]');
+            if (btn) {
+                var msg = btn.getAttribute('data-confirm');
+                if (!confirm(msg)) { e.preventDefault(); e.stopPropagation(); return false; }
+            }
+            var btn2 = e.target.closest('[data-confirm-double]');
+            if (btn2) {
+                var msg2 = btn2.getAttribute('data-confirm-double');
+                var step1 = confirm(msg2);
+                if (!step1) { e.preventDefault(); e.stopPropagation(); return false; }
+                var step2 = confirm("Veuillez confirmer une seconde fois.");
+                if (!step2) { e.preventDefault(); e.stopPropagation(); return false; }
+            }
+        });
+    </script>
+</body>
+</html>

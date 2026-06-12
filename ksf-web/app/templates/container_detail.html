@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}{{ container.name }} - KSF Web{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+    <a href="/containers">Containers</a> / <span>{{ container.name }}</span>
+</div>
+
+<h1>{{ container.name }}</h1>
+<div class="flex gap-sm">
+    <span class="badge badge-{{ 'success' if container.status == 'running' else 'danger' if container.status in ('exited', 'dead') else 'warning' }}">
+        {{ container.status }}
+    </span>
+    {% if container.health and container.health != '-' %}
+    <span class="badge badge-{{ 'success' if container.health == 'healthy' else 'danger' if container.health == 'unhealthy' else 'warning' }}">
+        {{ container.health }}
+    </span>
+    {% endif %}
+    <span class="badge badge-{{ 'primary' if container.type == 'core' else 'info' if container.type == 'app' else 'secondary' }}">
+        {{ container.type }}
+    </span>
+</div>
+
+<div class="grid grid-2">
+    <div class="card">
+        <h2>Informations</h2>
+        <div class="status-list">
+            <div class="status-row">
+                <span>Nom</span>
+                <span class="text-mono">{{ container.name }}</span>
+            </div>
+            <div class="status-row">
+                <span>ID</span>
+                <span class="text-mono">{{ container.full_id }}</span>
+            </div>
+            <div class="status-row">
+                <span>Image</span>
+                <span class="text-mono text-sm">{{ container.image }}</span>
+            </div>
+            <div class="status-row">
+                <span>Statut</span>
+                <span>{{ container.status }}</span>
+            </div>
+            <div class="status-row">
+                <span>Health</span>
+                <span>{{ container.health }}</span>
+            </div>
+            <div class="status-row">
+                <span>Uptime</span>
+                <span>{{ container.uptime }}</span>
+            </div>
+            <div class="status-row">
+                <span>Créé le</span>
+                <span>{{ container.created[:19] if container.created else '-' }}</span>
+            </div>
+            <div class="status-row">
+                <span>Restart count</span>
+                <span>{{ container.restart_count }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Ports</h2>
+        {% if container.ports %}
+        <div class="status-list">
+            {% for port in container.ports %}
+            <div class="status-row">
+                <span class="text-mono text-sm">{{ port }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted">Aucun port exposé.</p>
+        {% endif %}
+
+        <h2>Réseaux</h2>
+        {% if container.networks %}
+        <div class="status-list">
+            {% for name, ip in container.networks.items() %}
+            <div class="status-row">
+                <span>{{ name }}</span>
+                <span class="text-mono text-sm">{{ ip or '-' }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted">Aucun réseau.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <h2>Mounts</h2>
+    {% if container.mounts %}
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Source</th>
+                    <th>Destination</th>
+                    <th>Mode</th>
+                    <th>R/W</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in container.mounts %}
+                <tr>
+                    <td>{{ m.type }}</td>
+                    <td class="text-mono text-sm">{{ m.source }}</td>
+                    <td class="text-mono text-sm">{{ m.destination }}</td>
+                    <td>{{ m.mode or '-' }}</td>
+                    <td>
+                        <span class="badge badge-{{ 'success' if m.rw else 'secondary' }}">
+                            {{ 'R/W' if m.rw else 'R/O' }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-muted">Aucun mount.</p>
+    {% endif %}
+</div>
+
+{% if container.labels %}
+<div class="card">
+    <h2>Labels</h2>
+    <div class="status-list">
+        {% for key, value in container.labels.items() %}
+        <div class="status-row">
+            <span class="text-mono text-sm">{{ key }}</span>
+            <span class="text-mono text-sm">{{ value }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="flex justify-between align-center">
+        <h2>Logs (200 dernières lignes)</h2>
+        <div class="flex gap-sm">
+            <button class="btn btn-sm"
+                hx-get="/containers/{{ container.name }}/logs?lines=200"
+                hx-target="#logs-content"
+                hx-swap="innerHTML">
+                Rafraîchir
+            </button>
+            <button class="btn btn-sm btn-warning"
+                hx-post="/containers/{{ container.name }}/restart"
+                hx-on::after-request="showToast(JSON.parse(event.detail.xhr.responseText).message, event.detail.xhr.status === 200)"
+                data-confirm="Redémarrer {{ container.name }} ?">
+                Redémarrer
+            </button>
+        </div>
+    </div>
+    <pre id="logs-content" class="logs-block">{{ logs }}</pre>
+</div>
+{% endblock %}

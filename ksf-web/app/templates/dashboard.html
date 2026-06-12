@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - KSF Web{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<p class="text-muted">État global du serveur — {{ now }}</p>
+
+<div class="grid grid-4">
+    <div class="card stat-card">
+        <div class="stat-value text-success">{{ running }}</div>
+        <div class="stat-label">Running</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-value text-warning">{{ stopped }}</div>
+        <div class="stat-label">Stopped</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-value text-danger">{{ unhealthy }}</div>
+        <div class="stat-label">Unhealthy</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-value">{{ total }}</div>
+        <div class="stat-label">Total</div>
+    </div>
+</div>
+
+<div class="grid grid-2">
+    <div class="card">
+        <h2>Infrastructure</h2>
+        <div class="status-list">
+            <div class="status-row">
+                <span>Traefik</span>
+                <span class="badge {% if traefik_active %}badge-success{% else %}badge-danger{% endif %}">
+                    {% if traefik_active %}Actif{% else %}Inactif{% endif %}
+                </span>
+            </div>
+            <div class="status-row">
+                <span>OAuth2 Proxy</span>
+                <span class="badge {% if oauth2_active %}badge-success{% else %}badge-danger{% endif %}">
+                    {% if oauth2_active %}Actif{% else %}Inactif{% endif %}
+                </span>
+            </div>
+            <div class="status-row">
+                <span>CrowdSec</span>
+                <span class="badge {% if crowdsec_active %}badge-success{% else %}badge-secondary{% endif %}">
+                    {% if crowdsec_active %}Actif{% else %}Inactif{% endif %}
+                </span>
+            </div>
+            <div class="status-row">
+                <span>AppSec / WAF</span>
+                <span class="badge {% if appsec_active %}badge-success{% else %}badge-secondary{% endif %}">
+                    {% if appsec_active %}Actif{% else %}Inactif{% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Dernier backup</h2>
+        {% if latest_backup %}
+        <div class="status-list">
+            <div class="status-row">
+                <span>Fichier</span>
+                <span class="text-mono">{{ latest_backup.name }}</span>
+            </div>
+            <div class="status-row">
+                <span>Date</span>
+                <span>{{ latest_backup.created }}</span>
+            </div>
+            <div class="status-row">
+                <span>Taille</span>
+                <span>{{ latest_backup.size }}</span>
+            </div>
+            <div class="status-row">
+                <span>Checksum</span>
+                <span class="badge {% if latest_backup.has_checksum %}badge-success{% else %}badge-warning{% endif %}">
+                    {% if latest_backup.has_checksum %}Présent{% else %}Absent{% endif %}
+                </span>
+            </div>
+        </div>
+        {% else %}
+        <p class="text-muted">Aucun backup trouvé.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <h2>Actions</h2>
+    <div class="btn-group">
+        <button class="btn btn-primary"
+            hx-post="/system/doctor"
+            hx-target="#action-result"
+            hx-indicator="#doctor-indicator"
+            {% if not actions_enabled %}disabled{% endif %}>
+            <span id="doctor-indicator" class="htmx-indicator spinner"></span>
+            Lancer doctor
+        </button>
+        <button class="btn btn-primary"
+            hx-post="/backups/create"
+            hx-target="#action-result"
+            hx-swap="innerHTML"
+            hx-on::after-request="showToast(event.detail.xhr.responseText ? JSON.parse(event.detail.xhr.responseText).message : 'Action terminée', event.detail.xhr.status === 200)"
+            data-confirm="Créer un backup maintenant ?"
+            {% if not actions_enabled %}disabled{% endif %}>
+            Créer backup
+        </button>
+        <button class="btn btn-warning"
+            hx-post="/system/update-all"
+            hx-target="#action-result"
+            hx-swap="innerHTML"
+            hx-on::after-request="showToast(event.detail.xhr.responseText ? JSON.parse(event.detail.xhr.responseText).message : 'Action terminée', event.detail.xhr.status === 200)"
+            data-confirm="Lancer la mise à jour de toutes les stacks ?"
+            {% if not actions_enabled %}disabled{% endif %}>
+            Update all
+        </button>
+    </div>
+    <div id="action-result" class="action-result"></div>
+</div>
+
+{% if installed_apps %}
+<div class="card">
+    <h2>Apps installées</h2>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th>Nom</th>
+                    <th>Domaine</th>
+                    <th>OAuth2</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for app in installed_apps %}
+                <tr>
+                    <td class="text-mono">{{ app.name }}</td>
+                    <td>{{ app.host or '-' }}</td>
+                    <td>
+                        <span class="badge {% if app.protected %}badge-success{% else %}badge-secondary{% endif %}">
+                            {% if app.protected %}Protégé{% else %}Public{% endif %}
+                        </span>
+                    </td>
+                    <td>
+                        <a href="/containers" class="btn btn-sm">Containers</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
