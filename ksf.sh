@@ -6,7 +6,18 @@ set -euo pipefail
 # Menu interactif, status, config, routes, render, restart, protect, doctor, clean-data, backup, update, CrowdSec, trusted IPs
 # ============================================================
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+_ksf_resolve_script_dir() {
+  local source="$0"
+  while [ -L "$source" ]; do
+    local dir
+    dir="$(cd -P "$(dirname "$source")" && pwd)"
+    source="$(readlink "$source")"
+    [[ "$source" != /* ]] && source="${dir}/${source}"
+  done
+  cd -P "$(dirname "$source")" && pwd
+}
+
+SCRIPT_DIR="$(_ksf_resolve_script_dir)"
 source "${SCRIPT_DIR}/lib/common.sh"
 source "${SCRIPT_DIR}/lib/render.sh"
 
@@ -343,16 +354,34 @@ manage_install_cli() {
   ok "Commande ksf installée : ${link_path}"
 
   if ! _manage_cli_path_contains "$bin_dir"; then
-    echo ""
+    local bashrc="${HOME}/.bashrc"
+    local ksf_block="# KSF CLI
+export PATH=\"\$HOME/.local/bin:\$PATH\""
+
     warn "${bin_dir} n'est pas dans le PATH."
+
+    if [ -f "$bashrc" ] && grep -qF "# KSF CLI" "$bashrc" 2>/dev/null; then
+      info "Bloc KSF déjà présent dans ${bashrc}."
+    else
+      info "Ajout du bloc PATH dans ${bashrc}..."
+      {
+        echo ""
+        echo "# KSF CLI"
+        echo "export PATH=\"\$HOME/.local/bin:\$PATH\""
+      } >> "$bashrc"
+      ok "Bloc ajouté dans ${bashrc}."
+    fi
+
+    export PATH="${HOME}/.local/bin:${PATH}"
+
     echo ""
-    echo "Ajoute ces lignes dans ton ~/.bashrc :"
-    echo ""
-    echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-    echo ""
-    echo "Puis recharge :"
-    echo "  source ~/.bashrc"
-    echo "  ou reconnecte-toi en SSH"
+    if command -v ksf >/dev/null 2>&1; then
+      ok "La commande ksf est disponible."
+    else
+      warn "ksf non trouvé dans le PATH actuel."
+      echo "  source ~/.bashrc"
+      echo "  ou reconnecte-toi en SSH"
+    fi
   else
     echo ""
     info "Vérification :"
