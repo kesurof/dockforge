@@ -642,6 +642,19 @@ manage_crowdsec_require() {
   fi
 }
 
+manage_crowdsec_cscli() {
+  local display_command="$1"
+  shift
+
+  manage_crowdsec_require
+
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] cd ${CROWDSEC_DIR} && docker compose exec -T crowdsec cscli ${display_command}"
+    return 0
+  fi
+  (cd "${CROWDSEC_DIR}" && docker compose exec -T crowdsec cscli "$@")
+}
+
 manage_crowdsec_status() {
   manage_crowdsec_require
 
@@ -671,13 +684,70 @@ manage_crowdsec_logs() {
 }
 
 manage_crowdsec_decisions() {
-  manage_crowdsec_require
+  manage_crowdsec_cscli "decisions list" decisions list || { err "Impossible de lire les décisions CrowdSec."; exit 1; }
+}
 
-  if [ "${DRY_RUN:-false}" = true ]; then
-    warn "[DRY-RUN] cd ${CROWDSEC_DIR} && docker compose exec -T crowdsec cscli decisions list"
-    return 0
+manage_crowdsec_alerts() {
+  manage_crowdsec_cscli "alerts list" alerts list || { err "Impossible de lire les alertes CrowdSec."; exit 1; }
+}
+
+manage_crowdsec_metrics() {
+  manage_crowdsec_cscli "metrics" metrics || { err "Impossible de lire les métriques CrowdSec."; exit 1; }
+}
+
+manage_crowdsec_bouncers() {
+  manage_crowdsec_cscli "bouncers list" bouncers list || { err "Impossible de lire les bouncers CrowdSec."; exit 1; }
+}
+
+manage_crowdsec_ban() {
+  local ip="${1:-}"
+  local duration="${2:-4h}"
+
+  if [ -z "$ip" ]; then
+    err "IP manquante. Usage : ./ksf.sh crowdsec ban <ip> [duration]"
+    exit 1
   fi
-  (cd "${CROWDSEC_DIR}" && docker compose exec -T crowdsec cscli decisions list) || err "Impossible de lire les décisions CrowdSec."
+  manage_crowdsec_cscli "decisions add --ip ${ip} -d ${duration}" decisions add --ip "$ip" -d "$duration" || { err "Impossible d'ajouter la décision CrowdSec."; exit 1; }
+}
+
+manage_crowdsec_unban() {
+  local ip="${1:-}"
+
+  if [ -z "$ip" ]; then
+    err "IP manquante. Usage : ./ksf.sh crowdsec unban <ip>"
+    exit 1
+  fi
+  manage_crowdsec_cscli "decisions delete --ip ${ip}" decisions delete --ip "$ip" || { err "Impossible de supprimer la décision CrowdSec."; exit 1; }
+}
+
+manage_crowdsec_flush_decisions() {
+  manage_crowdsec_cscli "decisions flush" decisions flush || { err "Impossible de purger les décisions CrowdSec."; exit 1; }
+}
+
+manage_crowdsec_extract_enroll_token() {
+  local input="${1:-}"
+  local token
+
+  input="${input//$'\r'/}"
+  input="${input//$'\n'/ }"
+  token="${input##* }"
+  printf '%s' "$token"
+}
+
+manage_crowdsec_enroll() {
+  local enroll_input="${1:-}"
+  local token
+
+  token="$(manage_crowdsec_extract_enroll_token "$enroll_input")"
+  if [ -z "$token" ]; then
+    err "Token d'enrôlement manquant. Usage : ./ksf.sh crowdsec enroll <token-ou-commande>"
+    exit 1
+  fi
+  manage_crowdsec_cscli "console enroll <token masqué>" console enroll "$token" || { err "Impossible d'enrôler CrowdSec dans la Console."; exit 1; }
+}
+
+manage_crowdsec_console_status() {
+  manage_crowdsec_cscli "console status" console status || { err "Impossible de lire le statut Console CrowdSec."; exit 1; }
 }
 
 manage_crowdsec_restart() {
@@ -693,15 +763,25 @@ manage_crowdsec_restart() {
 
 manage_crowdsec() {
   local subcommand="${1:-}"
+  local arg="${2:-}"
+  local duration="${3:-}"
 
   case "$subcommand" in
     status) manage_crowdsec_status ;;
     logs) manage_crowdsec_logs ;;
     decisions) manage_crowdsec_decisions ;;
+    alerts) manage_crowdsec_alerts ;;
+    metrics) manage_crowdsec_metrics ;;
+    bouncers) manage_crowdsec_bouncers ;;
+    ban) manage_crowdsec_ban "$arg" "$duration" ;;
+    unban) manage_crowdsec_unban "$arg" ;;
+    flush-decisions) manage_crowdsec_flush_decisions ;;
+    enroll) manage_crowdsec_enroll "$arg" ;;
+    console-status) manage_crowdsec_console_status ;;
     restart) manage_crowdsec_restart ;;
     *)
       err "Commande CrowdSec inconnue : ${subcommand:-<vide>}"
-      err "Commandes disponibles : status, logs, decisions, restart"
+      err "Commandes disponibles : status, logs, decisions, alerts, metrics, bouncers, ban, unban, flush-decisions, enroll, console-status, restart"
       exit 1
       ;;
   esac
@@ -1073,6 +1153,23 @@ manage_doctor() {
     else
       _manage_check err "Clé bouncer CrowdSec" "Absente de ksf.env"
       ((errors++)) || true
+    fi
+    if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && docker ps --filter "name=crowdsec$" --format "{{.Names}}" 2>/dev/null | grep -q "crowdsec"; then
+      local crowdsec_console_status
+      if crowdsec_console_status=$(cd "${CROWDSEC_DIR}" && docker compose exec -T crowdsec cscli console status 2>/dev/null); then
+        if printf '%s' "$crowdsec_console_status" | grep -Eiq 'not enrolled|not registered|disabled'; then
+          _manage_check warn "Console CrowdSec" "Instance non enrôlée"
+          ((warnings++)) || true
+        else
+          _manage_check ok "Console CrowdSec" "cscli console status OK"
+        fi
+      else
+        _manage_check warn "Console CrowdSec" "Non configurée ou statut indisponible"
+        ((warnings++)) || true
+      fi
+    else
+      _manage_check warn "Console CrowdSec" "Statut non vérifié (conteneur CrowdSec indisponible)"
+      ((warnings++)) || true
     fi
     if [ "${DNS_RECORD_PROXIED:-false}" = true ] && [ -z "${TRAEFIK_TRUSTED_IPS:-}" ]; then
       _manage_check warn "IP réelle Cloudflare" "TRAEFIK_TRUSTED_IPS absent, CrowdSec peut bannir les IP Cloudflare"

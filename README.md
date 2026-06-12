@@ -79,7 +79,11 @@ Infrastructure :
 ./ksf.sh render
 ./ksf.sh restart
 ./ksf.sh crowdsec status
+./ksf.sh crowdsec logs
 ./ksf.sh crowdsec decisions
+./ksf.sh crowdsec alerts
+./ksf.sh crowdsec metrics
+./ksf.sh crowdsec bouncers
 ./ksf.sh clean-data
 ```
 
@@ -176,10 +180,29 @@ Commandes utiles :
 ./ksf.sh crowdsec status
 ./ksf.sh crowdsec logs
 ./ksf.sh crowdsec decisions
+./ksf.sh crowdsec alerts
+./ksf.sh crowdsec metrics
+./ksf.sh crowdsec bouncers
+./ksf.sh crowdsec ban 1.2.3.4 10m
+./ksf.sh crowdsec unban 1.2.3.4
+./ksf.sh crowdsec flush-decisions
+./ksf.sh crowdsec console-status
 ./ksf.sh crowdsec restart
 ./ksf.sh trusted-ips cloudflare
 ./ksf.sh trusted-ips apply cloudflare
 ```
+
+Ces commandes appellent `cscli` dans le conteneur CrowdSec via Docker Compose. Les décisions locales restent gérées par `cscli` : `decisions` liste les décisions actives, `ban` ajoute une décision locale, `unban` la supprime, et `flush-decisions` vide les décisions locales.
+
+Connexion à la Console CrowdSec officielle :
+
+1. Créez un compte sur `https://app.crowdsec.net`.
+2. Récupérez le token ou la commande d'enrôlement dans la Console CrowdSec.
+3. Lancez `./ksf.sh crowdsec enroll '<token-ou-commande>'` sur le serveur.
+4. Vérifiez avec `./ksf.sh crowdsec console-status`.
+5. Vérifiez dans la Console que le Security Engine apparaît.
+
+Le token d'enrôlement ne doit pas être commité. KSF ne l'écrit pas dans le dépôt et masque le token dans les messages dry-run.
 
 `./ksf.sh trusted-ips cloudflare` récupère les CIDR depuis les endpoints officiels Cloudflare (`https://www.cloudflare.com/ips-v4` et `https://www.cloudflare.com/ips-v6`) et affiche une ligne `TRAEFIK_TRUSTED_IPS=...` prête à coller dans `ksf.env`, sans modifier la configuration. `./ksf.sh trusted-ips apply cloudflare` met à jour `ksf.env`, régénère Traefik et redémarre Traefik. Si Cloudflare modifie ses plages IP, relancez la commande `apply`.
 

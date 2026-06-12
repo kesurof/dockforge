@@ -14,6 +14,8 @@ BASE_DIR="${HOME}/serverbox"
 COMMAND=""
 CLEAN_DATA_APP=""
 CROWDSEC_COMMAND=""
+CROWDSEC_ARG=""
+CROWDSEC_DURATION=""
 TRUSTED_IPS_COMMAND=""
 TRUSTED_IPS_PROVIDER=""
 DRY_RUN=false
@@ -31,7 +33,7 @@ Commandes :
   render                Régénérer les fichiers dynamiques Traefik
   restart               Relancer Traefik, OAuth2 Proxy et CrowdSec
   doctor                Diagnostic global de la plateforme
-  crowdsec <commande>   Gérer CrowdSec (status, logs, decisions, restart)
+  crowdsec <commande>   Gérer CrowdSec (status, logs, decisions, alerts, metrics, bouncers, ban, unban, flush-decisions, enroll, console-status, restart)
   trusted-ips cloudflare  Afficher les CIDR Cloudflare prêts pour TRAEFIK_TRUSTED_IPS
   trusted-ips apply cloudflare  Appliquer les CIDR Cloudflare et redémarrer Traefik
   clean-data [app]      Lister ou supprimer les données conservées
@@ -53,6 +55,9 @@ Exemples :
   $0 crowdsec status
   $0 crowdsec logs
   $0 crowdsec decisions
+  $0 crowdsec ban 1.2.3.4 10m
+  $0 crowdsec unban 1.2.3.4
+  $0 crowdsec console-status
   $0 crowdsec restart
   $0 trusted-ips cloudflare
   $0 trusted-ips apply cloudflare
@@ -72,6 +77,25 @@ while [[ $# -gt 0 ]]; do
           *)
             if [ -z "$CROWDSEC_COMMAND" ]; then
               CROWDSEC_COMMAND="$1"
+              shift
+              continue
+            fi
+            if [ -z "$CROWDSEC_ARG" ]; then
+              case "$CROWDSEC_COMMAND" in
+                ban|unban|enroll)
+                  CROWDSEC_ARG="$1"
+                  shift
+                  continue
+                  ;;
+              esac
+            fi
+            if [ -z "$CROWDSEC_DURATION" ] && [ "$CROWDSEC_COMMAND" = "ban" ]; then
+              CROWDSEC_DURATION="$1"
+              shift
+              continue
+            fi
+            if [ "$CROWDSEC_COMMAND" = "enroll" ]; then
+              CROWDSEC_ARG="${CROWDSEC_ARG} $1"
               shift
               continue
             fi
@@ -141,6 +165,20 @@ while [[ $# -gt 0 ]]; do
       elif [ "$COMMAND" = "crowdsec" ] && [ -z "$CROWDSEC_COMMAND" ]; then
         CROWDSEC_COMMAND="$1"
         shift
+      elif [ "$COMMAND" = "crowdsec" ] && [ -z "$CROWDSEC_ARG" ]; then
+        case "$CROWDSEC_COMMAND" in
+          ban|unban|enroll)
+            CROWDSEC_ARG="$1"
+            shift
+            ;;
+          *)
+            err "Argument inconnu : $1"
+            usage
+            ;;
+        esac
+      elif [ "$COMMAND" = "crowdsec" ] && [ -z "$CROWDSEC_DURATION" ] && [ "$CROWDSEC_COMMAND" = "ban" ]; then
+        CROWDSEC_DURATION="$1"
+        shift
       else
         err "Argument inconnu : $1"
         usage
@@ -181,7 +219,7 @@ case "$COMMAND" in
     manage_clean_data "${CLEAN_DATA_APP}"
     ;;
   crowdsec)
-    manage_crowdsec "${CROWDSEC_COMMAND}"
+    manage_crowdsec "${CROWDSEC_COMMAND}" "${CROWDSEC_ARG}" "${CROWDSEC_DURATION}"
     ;;
   trusted-ips)
     manage_trusted_ips "${TRUSTED_IPS_COMMAND}" "${TRUSTED_IPS_PROVIDER}"
