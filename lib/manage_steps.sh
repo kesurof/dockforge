@@ -710,49 +710,136 @@ manage_crowdsec() {
 # ---------- Trusted IPs ----------
 
 manage_trusted_ips_cloudflare() {
-  local source_url="https://www.cloudflare.com/ips/"
-  local ipv4_url="https://www.cloudflare.com/ips-v4"
-  local ipv6_url="https://www.cloudflare.com/ips-v6"
-  local ipv4_ranges ipv6_ranges ranges line joined=""
+  local source_url
+  local joined
 
-  if ! command -v curl >/dev/null 2>&1; then
-    err "curl est requis pour récupérer les plages IP Cloudflare officielles."
-    err "Source officielle : ${source_url}"
-    exit 1
-  fi
-
-  ipv4_ranges=$(curl -fsSL --max-time 10 "${ipv4_url}") || {
-    err "Impossible de récupérer ${ipv4_url}"
-    err "Source officielle : ${source_url}"
-    exit 1
-  }
-  ipv6_ranges=$(curl -fsSL --max-time 10 "${ipv6_url}") || {
-    err "Impossible de récupérer ${ipv6_url}"
-    err "Source officielle : ${source_url}"
-    exit 1
-  }
-
-  ranges=$(printf '%s\n%s\n' "${ipv4_ranges}" "${ipv6_ranges}")
-  while IFS= read -r line || [ -n "$line" ]; do
-    [ -n "$line" ] && joined="${joined:+${joined},}${line}"
-  done <<< "$ranges"
+  source_url="$(cloudflare_ips_source_url)"
+  joined="$(fetch_cloudflare_trusted_ips)" || exit 1
 
   echo "Source officielle : ${source_url}"
-  echo "Endpoints utilisés : ${ipv4_url} et ${ipv6_url}"
+  echo "Endpoints utilisés : https://www.cloudflare.com/ips-v4 et https://www.cloudflare.com/ips-v6"
   echo ""
   echo "TRAEFIK_TRUSTED_IPS=${joined}"
   echo ""
   echo "Après mise à jour de ksf.env : ./ksf.sh render puis ./ksf.sh restart"
 }
 
+manage_update_ksf_env_value() {
+  local key="$1"
+  local value="$2"
+  local env_file="${BASE_DIR}/config/ksf.env"
+  local tmp_file="${env_file}.tmp"
+  local line found=false
+
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] Mise à jour ${key} dans ${env_file}"
+    return 0
+  fi
+
+  if [ ! -f "$env_file" ]; then
+    err "Configuration absente : ${env_file}"
+    exit 1
+  fi
+
+  : > "$tmp_file"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "${key}="*)
+        printf '%s=%s\n' "$key" "$value" >> "$tmp_file"
+        found=true
+        ;;
+      *)
+        printf '%s\n' "$line" >> "$tmp_file"
+        ;;
+    esac
+  done < "$env_file"
+  if [ "$found" = false ]; then
+    printf '%s=%s\n' "$key" "$value" >> "$tmp_file"
+  fi
+  mv "$tmp_file" "$env_file"
+  chmod 600 "$env_file"
+}
+
+manage_restart_traefik_only() {
+  if ! command -v docker >/dev/null 2>&1; then
+    err "Docker n'est pas installé ou inaccessible."
+    exit 1
+  fi
+  if ! docker compose version >/dev/null 2>&1; then
+    err "Docker Compose n'est pas disponible."
+    exit 1
+  fi
+  if [ ! -f "${TRAEFIK_DIR}/docker-compose.yml" ]; then
+    err "Stack Traefik absente : ${TRAEFIK_DIR}/docker-compose.yml"
+    exit 1
+  fi
+
+  if [ "${WITH_CROWDSEC}" = true ] && [ -f "${CROWDSEC_DIR}/docker-compose.yml" ]; then
+    manage_wait_crowdsec_ready
+  fi
+
+  info "Redémarrage de Traefik..."
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] cd ${TRAEFIK_DIR} && docker compose up -d"
+    return 0
+  fi
+  if ! (cd "${TRAEFIK_DIR}" && docker compose up -d); then
+    err "Échec du redémarrage de Traefik."
+    exit 1
+  fi
+  ok "Traefik redémarré."
+}
+
+manage_trusted_ips_apply_cloudflare() {
+  local source_url
+  local trusted_ips
+
+  manage_require_installation
+  if [ "${WITH_TRAEFIK}" != true ]; then
+    err "Traefik n'est pas activé dans ${BASE_DIR}/config/ksf.env."
+    exit 1
+  fi
+
+  source_url="$(cloudflare_ips_source_url)"
+  info "Récupération des plages IP Cloudflare officielles..."
+  trusted_ips="$(fetch_cloudflare_trusted_ips)" || exit 1
+
+  manage_update_ksf_env_value "TRAEFIK_TRUSTED_IPS" "$trusted_ips"
+  TRAEFIK_TRUSTED_IPS="$trusted_ips"
+  TRAEFIK_TRUSTED_IPS_YAML="$(_manage_format_yaml_inline_list "${TRAEFIK_TRUSTED_IPS}")"
+  ok "TRAEFIK_TRUSTED_IPS mis à jour depuis ${source_url}."
+
+  manage_render
+  manage_require_installation
+  manage_restart_traefik_only
+
+  echo ""
+  echo "Résumé trusted IPs :"
+  echo "  Source           : ${source_url}"
+  echo "  Config           : ${BASE_DIR}/config/ksf.env"
+  echo "  Traefik statique : ${TRAEFIK_DIR}/traefik.yml"
+  echo "  CIDR             : $(printf '%s' "$trusted_ips" | tr ',' ' ' | wc -w) entrée(s)"
+}
+
 manage_trusted_ips() {
   local subcommand="${1:-}"
+  local provider="${2:-}"
 
   case "$subcommand" in
     cloudflare) manage_trusted_ips_cloudflare ;;
+    apply)
+      case "$provider" in
+        cloudflare) manage_trusted_ips_apply_cloudflare ;;
+        *)
+          err "Fournisseur trusted-ips inconnu : ${provider:-<vide>}"
+          err "Commandes disponibles : apply cloudflare"
+          exit 1
+          ;;
+      esac
+      ;;
     *)
       err "Commande trusted-ips inconnue : ${subcommand:-<vide>}"
-      err "Commandes disponibles : cloudflare"
+      err "Commandes disponibles : cloudflare, apply cloudflare"
       exit 1
       ;;
   esac

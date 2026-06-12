@@ -56,6 +56,49 @@ update_pkgs() {
   esac
 }
 
+# ---------- Cloudflare ----------
+
+fetch_cloudflare_trusted_ips() {
+  local source_url="https://www.cloudflare.com/ips/"
+  local ipv4_url="https://www.cloudflare.com/ips-v4"
+  local ipv6_url="https://www.cloudflare.com/ips-v6"
+  local ipv4_ranges ipv6_ranges ranges line joined=""
+
+  if ! command -v curl >/dev/null 2>&1; then
+    err "curl est requis pour récupérer les plages IP Cloudflare officielles."
+    err "Source officielle : ${source_url}"
+    return 1
+  fi
+
+  ipv4_ranges=$(curl -fsSL --max-time 10 "${ipv4_url}") || {
+    err "Impossible de récupérer ${ipv4_url}"
+    err "Source officielle : ${source_url}"
+    return 1
+  }
+  ipv6_ranges=$(curl -fsSL --max-time 10 "${ipv6_url}") || {
+    err "Impossible de récupérer ${ipv6_url}"
+    err "Source officielle : ${source_url}"
+    return 1
+  }
+
+  ranges=$(printf '%s\n%s\n' "${ipv4_ranges}" "${ipv6_ranges}")
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "$line" ] && joined="${joined:+${joined},}${line}"
+  done <<< "$ranges"
+
+  if [ -z "$joined" ]; then
+    err "La liste officielle des plages IP Cloudflare est vide."
+    err "Source officielle : ${source_url}"
+    return 1
+  fi
+
+  printf '%s' "$joined"
+}
+
+cloudflare_ips_source_url() {
+  printf '%s' "https://www.cloudflare.com/ips/"
+}
+
 # ---------- Validation ----------
 step_validation() {
   info "Validation de l'installation..."

@@ -15,6 +15,7 @@ COMMAND=""
 CLEAN_DATA_APP=""
 CROWDSEC_COMMAND=""
 TRUSTED_IPS_COMMAND=""
+TRUSTED_IPS_PROVIDER=""
 DRY_RUN=false
 AUTO_YES=false
 
@@ -32,6 +33,7 @@ Commandes :
   doctor                Diagnostic global de la plateforme
   crowdsec <commande>   Gérer CrowdSec (status, logs, decisions, restart)
   trusted-ips cloudflare  Afficher les CIDR Cloudflare prêts pour TRAEFIK_TRUSTED_IPS
+  trusted-ips apply cloudflare  Appliquer les CIDR Cloudflare et redémarrer Traefik
   clean-data [app]      Lister ou supprimer les données conservées
 
 Options :
@@ -53,6 +55,7 @@ Exemples :
   $0 crowdsec decisions
   $0 crowdsec restart
   $0 trusted-ips cloudflare
+  $0 trusted-ips apply cloudflare
   $0 clean-data
   $0 clean-data radarr
   $0 render --dry-run
@@ -81,6 +84,11 @@ while [[ $# -gt 0 ]]; do
           *)
             if [ -z "$TRUSTED_IPS_COMMAND" ]; then
               TRUSTED_IPS_COMMAND="$1"
+              shift
+              continue
+            fi
+            if [ "$TRUSTED_IPS_COMMAND" = "apply" ] && [ -z "$TRUSTED_IPS_PROVIDER" ]; then
+              TRUSTED_IPS_PROVIDER="$1"
               shift
               continue
             fi
@@ -176,6 +184,6 @@ case "$COMMAND" in
     manage_crowdsec "${CROWDSEC_COMMAND}"
     ;;
   trusted-ips)
-    manage_trusted_ips "${TRUSTED_IPS_COMMAND}"
+    manage_trusted_ips "${TRUSTED_IPS_COMMAND}" "${TRUSTED_IPS_PROVIDER}"
     ;;
 esac

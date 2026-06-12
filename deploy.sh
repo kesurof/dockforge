@@ -68,7 +68,7 @@ Options:
   --no-dns-auto-create    Désactive la création DNS applicative automatique
   --dns-provider NAME     Fournisseur DNS applicatif (défaut: cloudflare)
   --traefik-host HOST     Hostname Traefik (défaut: traefik.<DOMAIN>)
-  --traefik-trusted-ips CIDRS  Proxies CIDR de confiance pour X-Forwarded-For (ex: Cloudflare)
+  --traefik-trusted-ips CIDRS|cloudflare  Proxies CIDR de confiance pour X-Forwarded-For
   --with-traefik          Génère une stack Traefik
   --with-crowdsec         Génère CrowdSec et le middleware Traefik bouncer
   --crowdsec-bouncer-key KEY  Clé bouncer Traefik CrowdSec (générée si absente)
@@ -263,6 +263,18 @@ normalize_trusted_ips_value() {
     [ -n "$item" ] && normalized="${normalized:+${normalized},}${item}"
   done
   printf '%s' "$normalized"
+}
+
+resolve_trusted_ips_value() {
+  local value="${1:-}"
+
+  value="$(normalize_trusted_ips_value "$value")"
+  if [ "$value" = "cloudflare" ]; then
+    info "Récupération des plages IP Cloudflare officielles pour Traefik..." >&2
+    fetch_cloudflare_trusted_ips || exit 1
+    return 0
+  fi
+  printf '%s' "$value"
 }
 
 domain_list_contains() {
@@ -510,7 +522,7 @@ prepare_deploy_config() {
   if [ -z "$DNS_RECORD_PROXIED" ]; then
     DNS_RECORD_PROXIED=true
   fi
-  TRAEFIK_TRUSTED_IPS="$(normalize_trusted_ips_value "${TRAEFIK_TRUSTED_IPS}")"
+  TRAEFIK_TRUSTED_IPS="$(resolve_trusted_ips_value "${TRAEFIK_TRUSTED_IPS}")"
   TRAEFIK_TRUSTED_IPS_YAML="$(format_yaml_inline_list "${TRAEFIK_TRUSTED_IPS}")"
   if [ "$AUTO_YES" = true ] && [ "$DNS_AUTO_CREATE" = true ] && [ -z "$SERVER_PUBLIC_IP" ]; then
     SERVER_PUBLIC_IP="$(detect_server_public_ip)"
@@ -560,7 +572,7 @@ prompt_deploy_questions() {
     [ -n "$DOMAIN" ] && default_traefik_host="traefik.${DOMAIN}"
     ask_text TRAEFIK_HOST "Hostname Traefik" "${default_traefik_host}"
     ask_text ACME_EMAIL "Email Let's Encrypt"
-    ask_text TRAEFIK_TRUSTED_IPS "CIDR proxies de confiance Traefik (Cloudflare si proxy activé)"
+    ask_text TRAEFIK_TRUSTED_IPS "CIDR proxies de confiance Traefik (vide, cloudflare, ou liste CIDR)"
   fi
 
   section_title "5. OAuth2 GitHub"

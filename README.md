@@ -168,7 +168,7 @@ La clé bouncer est générée localement et stockée dans `~/serverbox/config/k
 
 Traefik utilise le plugin CrowdSec nommé `bouncer` et le mode `stream`. Les routes publiques utilisent `security-chain` quand CrowdSec est actif. Les routes protégées restent sur `oauth2-chain`, qui appelle CrowdSec avant OAuth2.
 
-Si vos DNS Cloudflare sont en mode proxy, renseignez les CIDR Cloudflare via `--traefik-trusted-ips` pendant l'installation, ou `TRAEFIK_TRUSTED_IPS` dans `ksf.env`. Après modification de `TRAEFIK_TRUSTED_IPS`, lancez `./ksf.sh render` pour régénérer `proxy/traefik/traefik.yml`, puis `./ksf.sh restart` pour appliquer la configuration statique. N'activez pas `forwardedHeaders.insecure=true` : sans trusted IPs correctes, CrowdSec peut voir et bannir les IP Cloudflare au lieu des vraies IP visiteurs.
+Si vos DNS Cloudflare sont en mode proxy, renseignez les CIDR Cloudflare via `--traefik-trusted-ips cloudflare` pendant l'installation, saisissez `cloudflare` dans le questionnaire, ou utilisez `./ksf.sh trusted-ips apply cloudflare` après installation. N'activez pas `forwardedHeaders.insecure=true` : sans trusted IPs correctes, CrowdSec peut voir et bannir les IP Cloudflare au lieu des vraies IP visiteurs.
 
 Commandes utiles :
 
@@ -178,9 +178,10 @@ Commandes utiles :
 ./ksf.sh crowdsec decisions
 ./ksf.sh crowdsec restart
 ./ksf.sh trusted-ips cloudflare
+./ksf.sh trusted-ips apply cloudflare
 ```
 
-`./ksf.sh trusted-ips cloudflare` récupère les CIDR depuis la page officielle Cloudflare IP Ranges (`https://www.cloudflare.com/ips/`) et affiche une ligne `TRAEFIK_TRUSTED_IPS=...` prête à coller dans `ksf.env`. Si Cloudflare modifie ses plages IP, relancez cette commande, mettez à jour `ksf.env`, puis lancez `./ksf.sh render` et `./ksf.sh restart`.
+`./ksf.sh trusted-ips cloudflare` récupère les CIDR depuis les endpoints officiels Cloudflare (`https://www.cloudflare.com/ips-v4` et `https://www.cloudflare.com/ips-v6`) et affiche une ligne `TRAEFIK_TRUSTED_IPS=...` prête à coller dans `ksf.env`, sans modifier la configuration. `./ksf.sh trusted-ips apply cloudflare` met à jour `ksf.env`, régénère Traefik et redémarre Traefik. Si Cloudflare modifie ses plages IP, relancez la commande `apply`.
 
 Pour désactiver CrowdSec, passez `WITH_CROWDSEC=false` dans `~/serverbox/config/ksf.env`, relancez `./ksf.sh render`, puis `./ksf.sh restart`. Vous pouvez ensuite arrêter la stack avec `cd ~/serverbox/proxy/crowdsec && docker compose down`. Les données locales restent dans `~/serverbox/proxy/crowdsec/`.
 
