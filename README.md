@@ -316,18 +316,20 @@ Pour désactiver CrowdSec, passez `WITH_CROWDSEC=false` dans `~/serverbox/config
 ./app.sh list
 ./app.sh install <app>
 ./app.sh status <app>
-./app.sh logs <app>
-./app.sh stop <app>
-./app.sh start <app>
+./app.sh update <app>
 ./app.sh restart <app>
+./app.sh disable <app>
 ./app.sh remove <app>
 ```
+
+Chaque app fournie par KSF a un template minimal `templates/apps/<app>/app.env` et `compose.yml`. La route Traefik `route-<app>.yml` est générée automatiquement dans `~/serverbox/proxy/traefik/dynamic/` depuis `app.env`; par défaut une app exposée est protégée avec OAuth2 Proxy.
 
 Exemples :
 
 ```bash
 ./app.sh install radarr --subdomain radarr --auth
 ./app.sh install radarr --subdomain radarr --domain example.com --auth
+./app.sh install radarr --subdomain radarr --no-auth
 ./app.sh install radarr --local-only
 ```
 

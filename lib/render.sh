@@ -43,7 +43,11 @@ RENDER_VARS=(
   TRAEFIK_TRUSTED_IPS_YAML
   CROWDSEC_APPSEC_VOLUME_BLOCK
   CROWDSEC_APPSEC_PLUGIN_BLOCK
+  APP_NAME
   APP_HOST
+  APP_PORT
+  APP_PROTECTED
+  APP_PUBLIC
   APP_PUID
   APP_PGID
 )
@@ -195,6 +199,96 @@ render_traefik_route_template() {
   local destination="$2"
 
   render_template "$template" "$destination"
+}
+
+render_normalize_app_vars() {
+  local fallback_name="${1:-}"
+  local template_env=""
+
+  : "${APP_NAME:=${fallback_name}}"
+  : "${APP_PUBLIC:=true}"
+  : "${APP_DISABLED:=false}"
+
+  if [ -n "${APP_NAME:-}" ]; then
+    template_env="${SCRIPT_DIR}/templates/apps/${APP_NAME}/app.env"
+  fi
+
+  if [ -z "${APP_PORT:-}" ] && [ -n "${APP_INTERNAL_PORT:-}" ]; then
+    APP_PORT="${APP_INTERNAL_PORT}"
+  fi
+  if [ -z "${APP_PORT:-}" ] && [ -f "$template_env" ]; then
+    APP_PORT="$( ( APP_PORT=""; APP_INTERNAL_PORT=""; source "$template_env"; printf '%s' "${APP_PORT:-${APP_INTERNAL_PORT:-}}" ) 2>/dev/null )"
+  fi
+  if [ -z "${APP_PROTECTED:-}" ]; then
+    APP_PROTECTED="${APP_AUTH:-true}"
+  fi
+  APP_AUTH="${APP_PROTECTED}"
+}
+
+render_app_route_from_env() {
+  local destination="$1"
+  local protected="${APP_PROTECTED:-${APP_AUTH:-true}}"
+  local middlewares_block=""
+
+  prepare_render_context
+  render_normalize_app_vars "${APP_NAME:-}"
+
+  if [ -z "${APP_NAME:-}" ]; then
+    err "APP_NAME manquant pour la génération de route applicative."
+    exit 1
+  fi
+  if [ -z "${APP_HOST:-}" ]; then
+    err "APP_HOST manquant pour la génération de route applicative : ${APP_NAME}"
+    exit 1
+  fi
+  if [ -z "${APP_PORT:-}" ]; then
+    err "APP_PORT manquant pour la génération de route applicative : ${APP_NAME}"
+    exit 1
+  fi
+
+  case "$protected" in
+    true)
+      if [ "${OAUTH2_ENABLED:-false}" != true ]; then
+        err "OAuth2 Proxy n'est pas configuré pour protéger ${APP_NAME}."
+        exit 1
+      fi
+      middlewares_block="      middlewares:
+        - oauth2-chain"
+      ;;
+    false)
+      middlewares_block="${TRAEFIK_PUBLIC_MIDDLEWARES_BLOCK}"
+      ;;
+    *)
+      err "APP_PROTECTED doit valoir true ou false pour ${APP_NAME}."
+      exit 1
+      ;;
+  esac
+
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] Rendu route applicative ${APP_NAME} -> ${destination}"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$destination")"
+  {
+    printf 'http:\n'
+    printf '  routers:\n'
+    printf '    %s:\n' "$APP_NAME"
+    printf '      rule: "Host(`%s`)"\n' "$APP_HOST"
+    printf '      entryPoints:\n'
+    printf '        - websecure\n'
+    printf '      service: %s\n' "$APP_NAME"
+    if [ -n "$middlewares_block" ]; then
+      printf '%s\n' "$middlewares_block"
+    fi
+    printf '      tls:\n'
+    printf '        certResolver: letsencrypt\n'
+    printf '  services:\n'
+    printf '    %s:\n' "$APP_NAME"
+    printf '      loadBalancer:\n'
+    printf '        servers:\n'
+    printf '          - url: http://%s:%s\n' "$APP_NAME" "$APP_PORT"
+  } > "$destination"
 }
 
 render_oauth2_middleware_template() {

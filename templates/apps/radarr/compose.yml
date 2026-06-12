@@ -6,7 +6,7 @@ services:
     networks:
       - proxy
     ports:
-      - "127.0.0.1:7878:7878"
+      - "127.0.0.1:${APP_PORT}:${APP_PORT}"
     environment:
       - PUID=${APP_PUID}
       - PGID=${APP_PGID}

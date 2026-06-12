@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================
 # KSF — Gestion des applications
-# Install / remove / start / stop / status / logs / list
+# Install / update / restart / disable / remove / status / logs / list
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -30,9 +30,11 @@ Commands:
   installed             Liste les apps installées
   install <app>         Installe une app
   status <app>          Affiche l'état Docker d'une app installée
+  update <app>          Met à jour une app installée
   start <app>           Démarre une app installée
   stop <app>            Arrête une app installée sans suppression
   restart <app>         Redémarre une app installée
+  disable <app>         Désactive une app sans supprimer ses données
   logs <app>            Affiche les logs Docker Compose d'une app
   remove <app>          Supprime une app (données préservées)
 
@@ -54,8 +56,10 @@ Exemples:
   $0 install radarr --subdomain films --auth
   $0 install radarr --host radarr.example.com --no-auth
   $0 status radarr
+  $0 update radarr --dry-run
   $0 logs radarr
   $0 restart radarr
+  $0 disable radarr --dry-run
   $0 remove radarr
 EOF
   exit 0
@@ -63,7 +67,7 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    list|installed|install|status|start|stop|restart|logs|remove)
+    list|installed|install|status|update|start|stop|restart|disable|logs|remove)
       if [ -n "$COMMAND" ]; then
         err "Commande déjà définie : ${COMMAND}"
         exit 1
@@ -111,7 +115,7 @@ while [[ $# -gt 0 ]]; do
       usage
       ;;
     *)
-      if { [ "$COMMAND" = "install" ] || [ "$COMMAND" = "status" ] || [ "$COMMAND" = "start" ] || [ "$COMMAND" = "stop" ] || [ "$COMMAND" = "restart" ] || [ "$COMMAND" = "logs" ] || [ "$COMMAND" = "remove" ]; } && [ -z "$APP_NAME" ]; then
+      if { [ "$COMMAND" = "install" ] || [ "$COMMAND" = "status" ] || [ "$COMMAND" = "update" ] || [ "$COMMAND" = "start" ] || [ "$COMMAND" = "stop" ] || [ "$COMMAND" = "restart" ] || [ "$COMMAND" = "disable" ] || [ "$COMMAND" = "logs" ] || [ "$COMMAND" = "remove" ]; } && [ -z "$APP_NAME" ]; then
         APP_NAME="$1"
         shift
       else
@@ -132,6 +136,7 @@ if [ -f "$KSF_ENV" ]; then
 fi
 
 source "${SCRIPT_DIR}/lib/app_steps.sh"
+source "${SCRIPT_DIR}/lib/backup_steps.sh"
 
 case "${COMMAND}" in
   list)
@@ -154,6 +159,13 @@ case "${COMMAND}" in
     fi
     app_status "$APP_NAME"
     ;;
+  update)
+    if [ -z "$APP_NAME" ]; then
+      err "Nom d'application requis."
+      exit 1
+    fi
+    app_update "$APP_NAME"
+    ;;
   start)
     if [ -z "$APP_NAME" ]; then
       err "Nom d'application requis."
@@ -174,6 +186,13 @@ case "${COMMAND}" in
       exit 1
     fi
     app_restart "$APP_NAME"
+    ;;
+  disable)
+    if [ -z "$APP_NAME" ]; then
+      err "Nom d'application requis."
+      exit 1
+    fi
+    app_disable "$APP_NAME"
     ;;
   logs)
     if [ -z "$APP_NAME" ]; then

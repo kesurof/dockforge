@@ -6,7 +6,7 @@ services:
     networks:
       - proxy
     ports:
-      - "127.0.0.1:5001:5001"
+      - "127.0.0.1:${APP_PORT}:${APP_PORT}"
     environment:
       - DOCKGE_STACKS_DIR=${BASE_DIR}/apps
       - DOCKGE_ENABLE_CONSOLE=false

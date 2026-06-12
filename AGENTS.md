@@ -139,15 +139,15 @@ Chaque application doit avoir un dossier dédié :
 templates/apps/<app>/
   app.env
   compose.yml
-  route.yml
-  route-oauth2.yml
 ```
 
 Règles :
 
 - Un seul `compose.yml` par application.
-- Les routes Traefik doivent rester séparées du Compose.
-- La variante OAuth2 doit être dans `route-oauth2.yml`.
+- Les routes Traefik applicatives sont générées automatiquement depuis `app.env`.
+- Ne pas ajouter de `route.yml` ou `route-oauth2.yml` dans les templates d'apps.
+- `APP_PROTECTED=true` est le défaut et génère une route avec OAuth2 Proxy.
+- `APP_PROTECTED=false` doit être explicite pour générer une route publique.
 - Les données persistantes vont dans `${BASE_DIR}/data/<app>`.
 - La stack générée va dans `${BASE_DIR}/apps/<app>`.
 - Les routes générées vont dans `${BASE_DIR}/proxy/traefik/dynamic/route-<app>.yml`.

@@ -140,7 +140,6 @@ app_list_available() {
 }
 
 app_list_installed() {
-  mkdir -p "${INSTALLED_DIR}"
   info "Apps installées :"
   local found=false
   for f in "${INSTALLED_DIR}"/*.env; do
@@ -155,6 +154,142 @@ app_list_installed() {
   fi
 }
 
+app_template_value() {
+  local app_name="$1"
+  local key="$2"
+  local env_file="${APP_TEMPLATE_DIR}/${app_name}/app.env"
+
+  [ -f "$env_file" ] || return 0
+  (
+    APP_NAME=""
+    APP_HOST=""
+    APP_DOMAIN=""
+    APP_PORT=""
+    APP_INTERNAL_PORT=""
+    APP_PROTECTED=""
+    APP_PUBLIC=""
+    APP_DESCRIPTION=""
+    APP_CATEGORY=""
+    APP_DEFAULT_HOST=""
+    source "$env_file"
+    case "$key" in
+      APP_PORT) printf '%s' "${APP_PORT:-${APP_INTERNAL_PORT:-}}" ;;
+      APP_HOST) printf '%s' "${APP_HOST:-${APP_DEFAULT_HOST:-}}" ;;
+      *) printf '%s' "${!key-}" ;;
+    esac
+  )
+}
+
+app_normalize_loaded() {
+  local app_name="$1"
+
+  render_normalize_app_vars "$app_name"
+  if [ -z "${APP_PORT:-}" ]; then
+    APP_PORT="$(app_template_value "$app_name" APP_PORT)"
+  fi
+  if [ -z "${APP_HOST:-}" ]; then
+    APP_HOST="$(app_template_value "$app_name" APP_HOST)"
+  fi
+  : "${APP_DIR:=${BASE_DIR}/apps/${app_name}}"
+  : "${APP_DATA:=${BASE_DIR}/data/${app_name}}"
+  : "${APP_PUID:=$(id -u)}"
+  : "${APP_PGID:=$(id -g)}"
+  : "${APP_INSTALLED_AT:=}"
+  : "${APP_DISABLED:=false}"
+
+  APP_MANAGED_NAME="${APP_NAME:-${app_name}}"
+  APP_MANAGED_DIR="${APP_DIR}"
+  APP_MANAGED_DATA="${APP_DATA}"
+}
+
+app_write_env_file() {
+  local destination="$1"
+  local app_name="$2"
+  local app_dir="$3"
+  local app_data="$4"
+  local installed_at="${APP_INSTALLED_AT:-$(date -Iseconds)}"
+
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] Enregistrement de ${destination}"
+    return 0
+  fi
+
+  : > "$destination"
+  ksf_env_write_var "$destination" APP_NAME "$app_name"
+  ksf_env_write_var "$destination" APP_HOST "${APP_HOST:-}"
+  ksf_env_write_var "$destination" APP_DOMAIN "${APP_DOMAIN:-}"
+  ksf_env_write_var "$destination" APP_SUBDOMAIN "${APP_SUBDOMAIN:-}"
+  ksf_env_write_var "$destination" APP_PORT "${APP_PORT:-}"
+  ksf_env_write_var "$destination" APP_PROTECTED "${APP_PROTECTED:-true}"
+  ksf_env_write_var "$destination" APP_AUTH "${APP_PROTECTED:-true}"
+  ksf_env_write_var "$destination" APP_PUBLIC "${APP_PUBLIC:-true}"
+  ksf_env_write_var "$destination" APP_LOCAL_ONLY "${APP_LOCAL_ONLY:-false}"
+  ksf_env_write_var "$destination" APP_DISABLED "${APP_DISABLED:-false}"
+  ksf_env_write_var "$destination" APP_DIR "$app_dir"
+  ksf_env_write_var "$destination" APP_DATA "$app_data"
+  ksf_env_write_var "$destination" APP_PUID "${APP_PUID}"
+  ksf_env_write_var "$destination" APP_PGID "${APP_PGID}"
+  ksf_env_write_var "$destination" APP_INSTALLED_AT "$installed_at"
+  chmod 600 "$destination"
+}
+
+app_update_env_value() {
+  local env_file="$1"
+  local key="$2"
+  local value="$3"
+  local tmp_file="${env_file}.tmp"
+  local line found=false
+
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] Mise à jour ${key} dans ${env_file}"
+    return 0
+  fi
+
+  : > "$tmp_file"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "${key}="*)
+        printf '%s=%s\n' "$key" "$(ksf_env_quote_value "$value")" >> "$tmp_file"
+        found=true
+        ;;
+      *)
+        printf '%s\n' "$line" >> "$tmp_file"
+        ;;
+    esac
+  done < "$env_file"
+  if [ "$found" = false ]; then
+    printf '%s=%s\n' "$key" "$(ksf_env_quote_value "$value")" >> "$tmp_file"
+  fi
+  mv "$tmp_file" "$env_file"
+  chmod 600 "$env_file"
+}
+
+app_confirm_action() {
+  local action="$1"
+  local app_name="$2"
+
+  [ "${DRY_RUN:-false}" = true ] && return 0
+  [ "${AUTO_YES:-false}" = true ] && return 0
+
+  echo -n "Confirmer ${action} de ${app_name} ? Tape '${app_name}' pour continuer : "
+  local confirmation
+  if ! read -r confirmation || [ "$confirmation" != "$app_name" ]; then
+    err "Action annulée."
+    exit 1
+  fi
+}
+
+app_create_backup_before() {
+  local action="$1"
+
+  if ! declare -F backup_create >/dev/null 2>&1; then
+    err "Module backup indisponible : backup automatique impossible avant ${action}."
+    exit 1
+  fi
+  info "Backup automatique avant ${action}..."
+  backup_create
+}
+
 app_require_installed() {
   local app_name="$1"
 
@@ -164,9 +299,7 @@ app_require_installed() {
   fi
 
   source "${INSTALLED_DIR}/${app_name}.env"
-  APP_MANAGED_NAME="${APP_NAME:-${app_name}}"
-  APP_MANAGED_DIR="${APP_DIR:-${BASE_DIR}/apps/${app_name}}"
-  APP_MANAGED_DATA="${APP_DATA:-${BASE_DIR}/data/${app_name}}"
+  app_normalize_loaded "$app_name"
 
   if [ ! -d "${APP_MANAGED_DIR}" ]; then
     err "Dossier de stack absent pour ${app_name} : ${APP_MANAGED_DIR}"
@@ -218,12 +351,14 @@ app_status() {
   echo "Données    : ${APP_MANAGED_DATA}"
   if [ "${APP_LOCAL_ONLY:-false}" = true ]; then
     echo "Accès      : local-only"
+  elif [ "${APP_DISABLED:-false}" = true ]; then
+    echo "Accès      : désactivé"
   elif [ -n "${APP_HOST:-}" ]; then
     echo "Accès      : https://${APP_HOST}"
   else
     echo "Accès      : non exposé"
   fi
-  echo "OAuth2 Proxy: ${APP_AUTH:-false}"
+  echo "OAuth2 Proxy: ${APP_PROTECTED:-${APP_AUTH:-true}}"
   echo ""
 
   if ! command -v docker >/dev/null 2>&1 || ! docker ps >/dev/null 2>&1; then
@@ -269,6 +404,80 @@ app_restart() {
     ok "Simulation de redémarrage de ${APP_MANAGED_NAME} terminée."
   else
     ok "App ${APP_MANAGED_NAME} redémarrée."
+  fi
+}
+
+app_update() {
+  local app_name="$1"
+  local app_template_dir="${APP_TEMPLATE_DIR}/${app_name}"
+
+  app_require_installed "$app_name"
+  if [ ! -f "${app_template_dir}/compose.yml" ]; then
+    err "Template Compose absent pour ${app_name} : ${app_template_dir}/compose.yml"
+    exit 1
+  fi
+
+  app_confirm_action "la mise à jour" "$app_name"
+  app_create_backup_before "update ${app_name}"
+
+  render_template "${app_template_dir}/compose.yml" "${APP_MANAGED_DIR}/docker-compose.yml"
+  app_write_env_file "${APP_MANAGED_DIR}/app.env" "$app_name" "$APP_MANAGED_DIR" "$APP_MANAGED_DATA"
+  app_write_env_file "${INSTALLED_DIR}/${app_name}.env" "$app_name" "$APP_MANAGED_DIR" "$APP_MANAGED_DATA"
+
+  if [ "${APP_LOCAL_ONLY:-false}" != true ] && [ "${APP_DISABLED:-false}" != true ] && [ "${APP_PUBLIC:-true}" = true ] && [ -n "${APP_HOST:-}" ]; then
+    render_app_route_from_env "${BASE_DIR}/proxy/traefik/dynamic/route-${app_name}.yml"
+  fi
+
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] cd ${APP_MANAGED_DIR} && docker compose pull"
+    warn "[DRY-RUN] cd ${APP_MANAGED_DIR} && docker compose up -d"
+    ok "Simulation de mise à jour de ${APP_MANAGED_NAME} terminée."
+    return 0
+  fi
+
+  app_require_docker
+  info "Pull ${APP_MANAGED_NAME}..."
+  (cd "${APP_MANAGED_DIR}" && docker compose pull) || { err "Échec docker compose pull pour ${APP_MANAGED_NAME}."; exit 1; }
+  info "Redémarrage ${APP_MANAGED_NAME}..."
+  (cd "${APP_MANAGED_DIR}" && docker compose up -d) || { err "Échec docker compose up -d pour ${APP_MANAGED_NAME}."; exit 1; }
+  ok "App ${APP_MANAGED_NAME} mise à jour."
+}
+
+app_disable() {
+  local app_name="$1"
+  local route_file="${BASE_DIR}/proxy/traefik/dynamic/route-${app_name}.yml"
+
+  app_require_installed "$app_name"
+  app_confirm_action "la désactivation" "$app_name"
+
+  if [ -d "${APP_MANAGED_DIR}" ]; then
+    if [ "${DRY_RUN:-false}" = true ]; then
+      warn "[DRY-RUN] cd ${APP_MANAGED_DIR} && docker compose down"
+    else
+      app_require_docker
+      info "Désactivation de ${APP_MANAGED_NAME}..."
+      if ! (cd "${APP_MANAGED_DIR}" && docker compose down); then
+        warn "docker compose down a échoué pour ${APP_MANAGED_NAME}. Désactivation locale poursuivie."
+      fi
+    fi
+  fi
+
+  if [ -f "$route_file" ]; then
+    run rm -f "$route_file"
+    ok "Route Traefik supprimée."
+  elif [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] Route Traefik absente ou déjà supprimée : ${route_file}"
+  fi
+
+  app_update_env_value "${INSTALLED_DIR}/${app_name}.env" APP_DISABLED true
+  if [ -f "${APP_MANAGED_DIR}/app.env" ]; then
+    app_update_env_value "${APP_MANAGED_DIR}/app.env" APP_DISABLED true
+  fi
+
+  if [ "${DRY_RUN:-false}" = true ]; then
+    ok "Simulation de désactivation de ${APP_MANAGED_NAME} terminée."
+  else
+    ok "App ${APP_MANAGED_NAME} désactivée."
   fi
 }
 
@@ -325,25 +534,27 @@ resolve_app_host() {
 
 resolve_app_auth() {
   local app_name="$1"
-  APP_AUTH=false
+  APP_PROTECTED="${APP_PROTECTED:-true}"
 
   if [ "${APP_AUTH_CHOICE}" = "true" ]; then
-    APP_AUTH=true
+    APP_PROTECTED=true
   elif [ "${APP_AUTH_CHOICE}" = "false" ]; then
-    APP_AUTH=false
+    APP_PROTECTED=false
   elif [ "${OAUTH2_ENABLED:-false}" = true ]; then
     if [ "${AUTO_YES}" = false ]; then
-      echo -n "Protéger l'accès à ${app_name} avec OAuth2 Proxy ? (oui/non) [non] : "
+      echo -n "Protéger l'accès à ${app_name} avec OAuth2 Proxy ? (oui/non) [oui] : "
       read -r auth_input
-      if [ "$auth_input" = "oui" ]; then
-        APP_AUTH=true
+      if [ "$auth_input" = "non" ]; then
+        APP_PROTECTED=false
       fi
     else
-      APP_AUTH=true
+      APP_PROTECTED=true
     fi
   fi
 
-  if [ "${APP_AUTH}" = true ] && [ "${OAUTH2_ENABLED:-false}" != true ]; then
+  APP_AUTH="${APP_PROTECTED}"
+
+  if [ "${APP_PROTECTED}" = true ] && [ "${OAUTH2_ENABLED:-false}" != true ]; then
     err "OAuth2 Proxy n'est pas configuré. Relance deploy.sh avec OAuth2 Proxy ou utilise --no-auth."
     exit 1
   fi
@@ -365,11 +576,16 @@ app_install() {
   fi
 
   source "${app_template_dir}/app.env"
+  APP_DEFAULT_HOST="${APP_DEFAULT_HOST:-${APP_HOST:-${APP_NAME:-${app_name}}}}"
+  APP_PORT="${APP_PORT:-${APP_INTERNAL_PORT:-}}"
+  APP_PROTECTED="${APP_PROTECTED:-true}"
+  APP_PUBLIC="${APP_PUBLIC:-true}"
 
   APP_HOST=""
   APP_DOMAIN=""
   APP_SUBDOMAIN=""
-  APP_AUTH=false
+  APP_AUTH="${APP_PROTECTED}"
+  APP_DISABLED=false
   APP_PUID="$(id -u)"
   APP_PGID="$(id -g)"
   local app_dir="${BASE_DIR}/apps/${app_name}"
@@ -379,44 +595,24 @@ app_install() {
     resolve_app_host "${app_name}"
     resolve_app_auth "${app_name}"
   else
-    info "${app_name} sera accessible en local sur 127.0.0.1:${APP_INTERNAL_PORT} si son compose expose ce port."
+    info "${app_name} sera accessible en local sur 127.0.0.1:${APP_PORT} si son compose expose ce port."
   fi
 
   run mkdir -p "${INSTALLED_DIR}" "${app_dir}" "${app_data}"
   render_template "${app_template_dir}/compose.yml" "${app_dir}/docker-compose.yml"
+  app_write_env_file "${app_dir}/app.env" "$app_name" "$app_dir" "$app_data"
   ok "Stack ${app_name} générée dans ${app_dir}"
 
-  if [ "${APP_LOCAL_ONLY}" = false ] && [ "${WITH_TRAEFIK:-false}" = true ] && [ -n "${APP_HOST}" ]; then
-    local route_tpl="route.yml"
-    if [ "${APP_AUTH}" = true ] && [ -f "${app_template_dir}/route-oauth2.yml" ]; then
-      route_tpl="route-oauth2.yml"
-    fi
+  if [ "${APP_LOCAL_ONLY}" = false ] && [ "${WITH_TRAEFIK:-false}" = true ] && [ -n "${APP_HOST}" ] && [ "${APP_PUBLIC}" = true ]; then
     local dynamic_dir="${BASE_DIR}/proxy/traefik/dynamic"
     run mkdir -p "${dynamic_dir}"
-    render_traefik_route_template "${app_template_dir}/${route_tpl}" "${dynamic_dir}/route-${app_name}.yml"
+    render_app_route_from_env "${dynamic_dir}/route-${app_name}.yml"
     ok "Route Traefik générée pour ${app_name} (${APP_HOST})"
   fi
 
   app_dns_ensure_record
 
-  if [ "${DRY_RUN:-false}" = false ]; then
-    cat > "${INSTALLED_DIR}/${app_name}.env" <<INSEOF
-APP_NAME=${app_name}
-APP_HOST=${APP_HOST}
-APP_DOMAIN=${APP_DOMAIN}
-APP_SUBDOMAIN=${APP_SUBDOMAIN}
-APP_AUTH=${APP_AUTH}
-APP_LOCAL_ONLY=${APP_LOCAL_ONLY}
-APP_DIR=${app_dir}
-APP_DATA=${app_data}
-APP_PUID=${APP_PUID}
-APP_PGID=${APP_PGID}
-APP_INSTALLED_AT=$(date -Iseconds)
-INSEOF
-    chmod 600 "${INSTALLED_DIR}/${app_name}.env"
-  else
-    warn "[DRY-RUN] Enregistrement de ${INSTALLED_DIR}/${app_name}.env"
-  fi
+  app_write_env_file "${INSTALLED_DIR}/${app_name}.env" "$app_name" "$app_dir" "$app_data"
 
   if [ "${DRY_RUN:-false}" = true ]; then
     warn "[DRY-RUN] cd ${app_dir} && docker compose up -d"
@@ -441,10 +637,14 @@ app_remove() {
   fi
 
   source "${INSTALLED_DIR}/${app_name}.env"
+  app_normalize_loaded "$app_name"
   local app_dir="${APP_DIR:-${BASE_DIR}/apps/${app_name}}"
   local route_file="${BASE_DIR}/proxy/traefik/dynamic/route-${app_name}.yml"
   local app_host="${APP_HOST:-}"
   local app_local_only="${APP_LOCAL_ONLY:-}"
+
+  app_confirm_action "la suppression" "$app_name"
+  app_create_backup_before "remove ${app_name}"
 
   if [ -d "${app_dir}" ]; then
     if [ "${DRY_RUN:-false}" = true ]; then
