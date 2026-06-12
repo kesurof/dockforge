@@ -30,6 +30,10 @@ RENDER_VARS=(
   OAUTH2_EMAIL_DOMAINS
   OAUTH2_AUTHENTICATED_EMAILS_FILE
   CROWDSEC_BOUNCER_KEY
+  TRAEFIK_TRUSTED_IPS
+  TRAEFIK_PUBLIC_MIDDLEWARES
+  TRAEFIK_OAUTH2_CHAIN_MIDDLEWARES
+  TRAEFIK_TRUSTED_IPS_YAML
   APP_HOST
   APP_PUID
   APP_PGID
@@ -45,7 +49,20 @@ RENDER_OPTIONAL_VARS=(
   OAUTH2_AUTHENTICATED_EMAILS_FILE
   OAUTH2_GITHUB_USER
   CROWDSEC_BOUNCER_KEY
+  TRAEFIK_TRUSTED_IPS
+  TRAEFIK_TRUSTED_IPS_YAML
 )
+
+prepare_render_context() {
+  if [ "${WITH_CROWDSEC:-false}" = true ]; then
+    TRAEFIK_PUBLIC_MIDDLEWARES="[security-chain]"
+    TRAEFIK_OAUTH2_CHAIN_MIDDLEWARES="[crowdsec, oauth2-errors, oauth2-auth]"
+  else
+    TRAEFIK_PUBLIC_MIDDLEWARES="[]"
+    TRAEFIK_OAUTH2_CHAIN_MIDDLEWARES="[oauth2-errors, oauth2-auth]"
+  fi
+  : "${TRAEFIK_TRUSTED_IPS_YAML:=[]}"
+}
 
 is_optional_render_var() {
   local candidate="$1"
@@ -64,6 +81,8 @@ render_template() {
   local template="$1"
   local destination="$2"
   local content var token value shell_token
+
+  prepare_render_context
 
   if [ ! -f "$template" ]; then
     err "Template introuvable : ${template}"
@@ -101,36 +120,6 @@ render_traefik_route_template() {
   local destination="$2"
 
   render_template "$template" "$destination"
-
-  if [ "${DRY_RUN:-false}" = true ] || [ "${WITH_CROWDSEC:-false}" != true ]; then
-    return 0
-  fi
-
-  route_apply_crowdsec_chain "$destination"
-}
-
-route_apply_crowdsec_chain() {
-  local route_file="$1"
-  local tmp_file="${route_file}.tmp"
-  local line inserted=false
-
-  [ -f "$route_file" ] || return 0
-
-  if grep -q 'oauth2-chain\|security-chain' "$route_file" 2>/dev/null; then
-    return 0
-  fi
-
-  : > "$tmp_file"
-  while IFS= read -r line || [ -n "$line" ]; do
-    printf '%s\n' "$line" >> "$tmp_file"
-    if [ "$inserted" = false ] && [[ "$line" =~ ^[[:space:]]{6}service:[[:space:]] ]]; then
-      printf '      middlewares:\n' >> "$tmp_file"
-      printf '        - security-chain\n' >> "$tmp_file"
-      inserted=true
-    fi
-  done < "$route_file"
-
-  mv "$tmp_file" "$route_file"
 }
 
 render_oauth2_middleware_template() {
@@ -138,35 +127,4 @@ render_oauth2_middleware_template() {
   local destination="$2"
 
   render_template "$template" "$destination"
-
-  if [ "${DRY_RUN:-false}" = true ] || [ "${WITH_CROWDSEC:-false}" != true ]; then
-    return 0
-  fi
-
-  oauth2_chain_apply_crowdsec "$destination"
-}
-
-oauth2_chain_apply_crowdsec() {
-  local middleware_file="$1"
-  local tmp_file="${middleware_file}.tmp"
-  local line in_oauth2_chain=false inserted=false
-
-  [ -f "$middleware_file" ] || return 0
-  grep -q 'oauth2-chain' "$middleware_file" 2>/dev/null || return 0
-  grep -q '^[[:space:]]*- crowdsec$' "$middleware_file" 2>/dev/null && return 0
-
-  : > "$tmp_file"
-  while IFS= read -r line || [ -n "$line" ]; do
-    printf '%s\n' "$line" >> "$tmp_file"
-    if [[ "$line" =~ ^[[:space:]]{4}oauth2-chain: ]]; then
-      in_oauth2_chain=true
-      continue
-    fi
-    if [ "$in_oauth2_chain" = true ] && [ "$inserted" = false ] && [[ "$line" =~ ^[[:space:]]{8}middlewares: ]]; then
-      printf '          - crowdsec\n' >> "$tmp_file"
-      inserted=true
-    fi
-  done < "$middleware_file"
-
-  mv "$tmp_file" "$middleware_file"
 }

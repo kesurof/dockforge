@@ -2,14 +2,13 @@ http:
   middlewares:
     crowdsec:
       plugin:
-        crowdsec-bouncer:
+        bouncer:
           enabled: true
           crowdsecLapiHost: "crowdsec:8080"
           crowdsecLapiScheme: "http"
           crowdsecLapiKey: "${CROWDSEC_BOUNCER_KEY}"
-          crowdsecMode: "live"
+          crowdsecMode: "stream"
 
     security-chain:
       chain:
-        middlewares:
-          - crowdsec
+        middlewares: [crowdsec]

@@ -63,6 +63,7 @@ Variables importantes :
 - `DOMAIN` : domaine principal de l'installation.
 - `DEFAULT_DOMAIN` : variable interne, automatiquement égale à `DOMAIN`.
 - `DOMAINS` : liste des domaines autorisés pour les apps.
+- `TRAEFIK_TRUSTED_IPS` : liste CIDR optionnelle des proxies de confiance Traefik pour l'IP réelle visiteur.
 
 `DEFAULT_DOMAIN` est écrit pour l'usage interne de KSF. Pour choisir les domaines utilisables par les applications, utilisez `DOMAIN` et `DOMAINS`.
 
@@ -163,6 +164,10 @@ Fichiers locaux générés :
 ```
 
 La clé bouncer est générée localement et stockée dans `~/serverbox/config/ksf.env`. CrowdSec n'est pas exposé par Traefik et sa Local API reste accessible uniquement sur le réseau Docker interne.
+
+Traefik utilise le plugin CrowdSec nommé `bouncer` et le mode `stream`. Les routes publiques utilisent `security-chain` quand CrowdSec est actif. Les routes protégées restent sur `oauth2-chain`, qui appelle CrowdSec avant OAuth2.
+
+Si vos DNS Cloudflare sont en mode proxy, renseignez les CIDR Cloudflare via `--traefik-trusted-ips` pendant l'installation, ou `TRAEFIK_TRUSTED_IPS` dans `ksf.env` avant de régénérer Traefik. N'activez pas `forwardedHeaders.insecure=true` : sans trusted IPs correctes, CrowdSec peut voir et bannir les IP Cloudflare au lieu des vraies IP visiteurs.
 
 Commandes utiles :
 

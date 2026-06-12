@@ -19,6 +19,4 @@ http:
 
     oauth2-chain:
       chain:
-        middlewares:
-          - oauth2-errors
-          - oauth2-auth
+        middlewares: ${TRAEFIK_OAUTH2_CHAIN_MIDDLEWARES}

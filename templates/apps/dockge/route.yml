@@ -5,6 +5,7 @@ http:
       entryPoints:
         - websecure
       service: dockge
+      middlewares: ${TRAEFIK_PUBLIC_MIDDLEWARES}
       tls:
         certResolver: letsencrypt
   services:

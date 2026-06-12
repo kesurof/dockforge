@@ -5,6 +5,7 @@ http:
       entryPoints:
         - websecure
       service: oauth2-proxy
+      middlewares: ${TRAEFIK_PUBLIC_MIDDLEWARES}
       tls:
         certResolver: letsencrypt
 

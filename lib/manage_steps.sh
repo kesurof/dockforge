@@ -4,6 +4,26 @@
 
 TEMPLATE_DIR="${SCRIPT_DIR}/templates"
 
+_manage_format_yaml_inline_list() {
+  local value="${1:-}"
+  local item
+  local rendered=""
+  local -a items
+
+  value="${value//[[:space:]]/}"
+  value="${value//\"/}"
+  value="${value//\'/}"
+  IFS=',' read -r -a items <<< "$value"
+  for item in "${items[@]}"; do
+    [ -n "$item" ] && rendered="${rendered:+${rendered}, }\"${item}\""
+  done
+  if [ -n "$rendered" ]; then
+    printf '[%s]' "$rendered"
+  else
+    printf '[]'
+  fi
+}
+
 _manage_setup_paths() {
   INSTALLED_DIR="${BASE_DIR}/config/installed-apps"
   TRAEFIK_DYNAMIC_DIR="${BASE_DIR}/proxy/traefik/dynamic"
@@ -27,6 +47,8 @@ manage_require_installation() {
   : "${WITH_TRAEFIK:=false}"
   : "${OAUTH2_ENABLED:=false}"
   : "${WITH_CROWDSEC:=false}"
+  : "${TRAEFIK_TRUSTED_IPS:=}"
+  TRAEFIK_TRUSTED_IPS_YAML="$(_manage_format_yaml_inline_list "${TRAEFIK_TRUSTED_IPS}")"
   : "${DNS_AUTO_CREATE:=false}"
   : "${NETWORK_NAME:=proxy}"
   : "${TZ_VALUE:=Europe/Paris}"
@@ -176,7 +198,11 @@ _manage_route_has_crowdsec() {
 }
 
 _manage_route_has_placeholder() {
-  grep -q '\${' "$1" 2>/dev/null
+  grep -Eq '\$\{|__[A-Z0-9_]+__' "$1" 2>/dev/null
+}
+
+_manage_file_has_placeholder() {
+  grep -Eq '\$\{|__[A-Z0-9_]+__' "$1" 2>/dev/null
 }
 
 _manage_route_extract_host() {
@@ -241,7 +267,7 @@ manage_routes() {
         elif [ "$filename" != "route-traefik.yml" ]; then
           extra=" (anomalie: route orpheline)"
         fi
-        if _manage_route_has_crowdsec "$file"; then
+        if [ "${WITH_CROWDSEC}" = true ]; then
           ok "  ${filename}  (protégée, CrowdSec)${extra}  ${host:+→ ${host}}"
         else
           ok "  ${filename}  (protégée)${extra}  ${host:+→ ${host}}"
@@ -406,6 +432,28 @@ manage_render() {
 
 # ---------- Restart ----------
 
+manage_wait_crowdsec_ready() {
+  local attempt
+
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] Vérification disponibilité CrowdSec avant Traefik"
+    return 0
+  fi
+
+  info "Vérification de la disponibilité CrowdSec..."
+  for attempt in {1..30}; do
+    if (cd "${CROWDSEC_DIR}" && docker compose exec -T crowdsec cscli lapi status >/dev/null 2>&1); then
+      ok "CrowdSec est prêt."
+      return 0
+    fi
+    sleep 2
+  done
+
+  err "CrowdSec n'est pas disponible après redémarrage. Traefik ne sera pas redémarré avec le middleware CrowdSec."
+  err "Commande de dépannage : cd ${CROWDSEC_DIR} && docker compose logs crowdsec"
+  exit 1
+}
+
 manage_restart() {
   manage_require_installation
 
@@ -425,7 +473,11 @@ manage_restart() {
     if [ "${DRY_RUN:-false}" = true ]; then
       warn "[DRY-RUN] cd ${CROWDSEC_DIR} && docker compose up -d"
     else
-      (cd "${CROWDSEC_DIR}" && docker compose up -d) || warn "Échec du redémarrage de CrowdSec."
+      if ! (cd "${CROWDSEC_DIR}" && docker compose up -d); then
+        err "Échec du redémarrage de CrowdSec."
+        exit 1
+      fi
+      manage_wait_crowdsec_ready
     fi
     restarted=true
   fi
@@ -712,6 +764,17 @@ manage_doctor() {
   if [ "${WITH_TRAEFIK}" = true ]; then
     if [ -f "${TRAEFIK_DIR}/docker-compose.yml" ]; then
       _manage_check ok "Stack Traefik" "docker-compose.yml présent"
+      if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+        if (cd "${TRAEFIK_DIR}" && docker compose config >/dev/null 2>&1); then
+          _manage_check ok "Compose Traefik" "docker compose config valide"
+        else
+          _manage_check err "Compose Traefik" "docker compose config échoue"
+          ((errors++)) || true
+        fi
+      else
+        _manage_check warn "Compose Traefik" "Docker Compose indisponible"
+        ((warnings++)) || true
+      fi
     else
       _manage_check err "Stack Traefik" "docker-compose.yml absent"
       ((errors++)) || true
@@ -728,6 +791,17 @@ manage_doctor() {
   if [ "${WITH_CROWDSEC}" = true ]; then
     if [ -f "${CROWDSEC_DIR}/docker-compose.yml" ]; then
       _manage_check ok "Stack CrowdSec" "docker-compose.yml présent"
+      if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+        if (cd "${CROWDSEC_DIR}" && docker compose config >/dev/null 2>&1); then
+          _manage_check ok "Compose CrowdSec" "docker compose config valide"
+        else
+          _manage_check err "Compose CrowdSec" "docker compose config échoue"
+          ((errors++)) || true
+        fi
+      else
+        _manage_check warn "Compose CrowdSec" "Docker Compose indisponible"
+        ((warnings++)) || true
+      fi
     else
       _manage_check err "Stack CrowdSec" "docker-compose.yml absent"
       ((errors++)) || true
@@ -803,8 +877,37 @@ manage_doctor() {
   if [ "${WITH_CROWDSEC}" = true ]; then
     if [ -f "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml" ]; then
       _manage_check ok "Middleware CrowdSec" "Présent"
+      if grep -q 'plugin:' "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml" 2>/dev/null && grep -q '^[[:space:]]*bouncer:' "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml" 2>/dev/null; then
+        _manage_check ok "Plugin dynamique CrowdSec" "plugin.bouncer"
+      else
+        _manage_check err "Plugin dynamique CrowdSec" "plugin.bouncer absent"
+        ((errors++)) || true
+      fi
+      if grep -q 'crowdsecMode: "stream"' "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml" 2>/dev/null; then
+        _manage_check ok "Mode CrowdSec" "stream"
+      else
+        _manage_check err "Mode CrowdSec" "stream absent"
+        ((errors++)) || true
+      fi
     else
       _manage_check err "Middleware CrowdSec" "Absent (lancer: ./ksf.sh render)"
+      ((errors++)) || true
+    fi
+    if [ -f "${TRAEFIK_DIR}/traefik.yml" ]; then
+      if grep -q '^[[:space:]]*bouncer:' "${TRAEFIK_DIR}/traefik.yml" 2>/dev/null; then
+        _manage_check ok "Plugin statique Traefik" "experimental.plugins.bouncer"
+      else
+        _manage_check err "Plugin statique Traefik" "experimental.plugins.bouncer absent"
+        ((errors++)) || true
+      fi
+      if grep -q '^accessLog:' "${TRAEFIK_DIR}/traefik.yml" 2>/dev/null && grep -q 'filePath: /logs/access.log' "${TRAEFIK_DIR}/traefik.yml" 2>/dev/null; then
+        _manage_check ok "Access log statique" "Configuré dans traefik.yml"
+      else
+        _manage_check err "Access log statique" "Absent de traefik.yml"
+        ((errors++)) || true
+      fi
+    else
+      _manage_check err "Config Traefik" "traefik.yml absent"
       ((errors++)) || true
     fi
     if [ -f "${TRAEFIK_DIR}/logs/access.log" ]; then
@@ -830,6 +933,12 @@ manage_doctor() {
       _manage_check err "Clé bouncer CrowdSec" "Absente de ksf.env"
       ((errors++)) || true
     fi
+    if [ "${DNS_RECORD_PROXIED:-false}" = true ] && [ -z "${TRAEFIK_TRUSTED_IPS:-}" ]; then
+      _manage_check warn "IP réelle Cloudflare" "TRAEFIK_TRUSTED_IPS absent, CrowdSec peut bannir les IP Cloudflare"
+      ((warnings++)) || true
+    elif [ -n "${TRAEFIK_TRUSTED_IPS:-}" ]; then
+      _manage_check ok "Trusted IPs Traefik" "${TRAEFIK_TRUSTED_IPS}"
+    fi
   fi
 
   # 7. Routes
@@ -837,14 +946,26 @@ manage_doctor() {
     local route_issues=false
     for file in "${TRAEFIK_DYNAMIC_DIR}"/route-*.yml; do
       [ -f "$file" ] || continue
-      if _manage_route_has_placeholder "$file"; then
+      if _manage_file_has_placeholder "$file"; then
         _manage_check err "Route avec placeholders" "$(basename "$file")"
         ((errors++)) || true
         route_issues=true
-        break
       fi
     done
     [ "$route_issues" = false ] && _manage_check ok "Routes" "Aucun placeholder résiduel"
+  fi
+
+  if [ -d "${TRAEFIK_DIR}" ]; then
+    local generated_issues=false
+    for file in "${TRAEFIK_DIR}"/*.yml "${TRAEFIK_DYNAMIC_DIR}"/*.yml; do
+      [ -f "$file" ] || continue
+      if _manage_file_has_placeholder "$file"; then
+        _manage_check err "Fichier avec placeholders" "${file#${BASE_DIR}/}"
+        ((errors++)) || true
+        generated_issues=true
+      fi
+    done
+    [ "$generated_issues" = false ] && _manage_check ok "Fichiers Traefik" "Aucun placeholder résiduel"
   fi
 
   # 8. Apps installées

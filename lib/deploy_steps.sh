@@ -65,8 +65,11 @@ step_traefik() {
   run mkdir -p "${TRAEFIK_DIR}/dynamic" "${TRAEFIK_DIR}/acme" "${TRAEFIK_DIR}/logs"
 
   render_template "${TEMPLATE_DIR}/compose/traefik.yml" "${TRAEFIK_DIR}/docker-compose.yml"
-  render_template "${TEMPLATE_DIR}/traefik/traefik.yml" "${TRAEFIK_DIR}/traefik.yml"
-  traefik_enable_crowdsec_plugin "${TRAEFIK_DIR}/traefik.yml"
+  if [ "${WITH_CROWDSEC:-false}" = true ]; then
+    render_template "${TEMPLATE_DIR}/traefik/traefik-crowdsec.yml" "${TRAEFIK_DIR}/traefik.yml"
+  else
+    render_template "${TEMPLATE_DIR}/traefik/traefik.yml" "${TRAEFIK_DIR}/traefik.yml"
+  fi
   render_template "${TEMPLATE_DIR}/traefik/tls.yml" "${TRAEFIK_DIR}/dynamic/tls.yml"
   if [ "${OAUTH2_ENABLED}" = true ]; then
     render_traefik_route_template "${TEMPLATE_DIR}/traefik/route-traefik-oauth2.yml" "${TRAEFIK_DIR}/dynamic/route-traefik.yml"
@@ -78,27 +81,6 @@ step_traefik() {
   run chmod 600 "${TRAEFIK_DIR}/acme/acme.json"
   run touch "${TRAEFIK_DIR}/logs/access.log"
   ok "Stack Traefik générée dans ${TRAEFIK_DIR}"
-}
-
-traefik_enable_crowdsec_plugin() {
-  local traefik_config="$1"
-
-  if [ "${WITH_CROWDSEC:-false}" != true ]; then
-    return 0
-  fi
-  if [ "${DRY_RUN:-false}" = true ]; then
-    warn "[DRY-RUN] Ajout du plugin CrowdSec Traefik bouncer dans ${traefik_config}"
-    return 0
-  fi
-
-  cat >> "${traefik_config}" <<'EOF'
-
-experimental:
-  plugins:
-    crowdsec-bouncer:
-      moduleName: "github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin"
-      version: "v1.6.0"
-EOF
 }
 
 write_oauth2_allowed_emails_file() {
@@ -270,6 +252,29 @@ start_compose_stack() {
   ok "${stack_name} démarré."
 }
 
+wait_crowdsec_ready() {
+  local stack_dir="$1"
+  local attempt
+
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] Vérification disponibilité CrowdSec avant Traefik"
+    return 0
+  fi
+
+  info "Vérification de la disponibilité CrowdSec..."
+  for attempt in {1..30}; do
+    if (cd "${stack_dir}" && docker compose exec -T crowdsec cscli lapi status >/dev/null 2>&1); then
+      ok "CrowdSec est prêt."
+      return 0
+    fi
+    sleep 2
+  done
+
+  err "CrowdSec n'est pas disponible après démarrage. Traefik ne sera pas lancé avec le middleware CrowdSec."
+  err "Commande de dépannage : cd ${stack_dir} && docker compose logs crowdsec"
+  exit 1
+}
+
 step_start_infrastructure() {
   if [ "${WITH_CROWDSEC:-false}" = true ]; then
     CROWDSEC_DIR="${BASE_DIR}/proxy/crowdsec"
@@ -279,6 +284,7 @@ step_start_infrastructure() {
       CROWDSEC_START_STATUS="en attente"
     fi
     start_compose_stack "CrowdSec" "${CROWDSEC_DIR}"
+    wait_crowdsec_ready "${CROWDSEC_DIR}"
     if [ "${DRY_RUN:-false}" = false ]; then
       CROWDSEC_START_STATUS="OK"
     fi

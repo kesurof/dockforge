@@ -29,6 +29,8 @@ DNS_PROVIDER=""
 DNS_RECORD_TTL=""
 DNS_RECORD_PROXIED=""
 TRAEFIK_HOST=""
+TRAEFIK_TRUSTED_IPS=""
+TRAEFIK_TRUSTED_IPS_YAML="[]"
 OAUTH2_ENABLED=false
 OAUTH2_CLIENT_ID=""
 OAUTH2_CLIENT_SECRET=""
@@ -66,6 +68,7 @@ Options:
   --no-dns-auto-create    Désactive la création DNS applicative automatique
   --dns-provider NAME     Fournisseur DNS applicatif (défaut: cloudflare)
   --traefik-host HOST     Hostname Traefik (défaut: traefik.<DOMAIN>)
+  --traefik-trusted-ips CIDRS  Proxies CIDR de confiance pour X-Forwarded-For (ex: Cloudflare)
   --with-traefik          Génère une stack Traefik
   --with-crowdsec         Génère CrowdSec et le middleware Traefik bouncer
   --crowdsec-bouncer-key KEY  Clé bouncer Traefik CrowdSec (générée si absente)
@@ -97,6 +100,7 @@ while [[ $# -gt 0 ]]; do
     --no-dns-auto-create) DNS_AUTO_CREATE=false; shift ;;
     --dns-provider)    DNS_PROVIDER="$2"; shift 2 ;;
     --traefik-host)   TRAEFIK_HOST="$2"; shift 2 ;;
+    --traefik-trusted-ips) TRAEFIK_TRUSTED_IPS="$2"; shift 2 ;;
     --with-traefik)   WITH_TRAEFIK=true; shift ;;
     --with-crowdsec)  WITH_CROWDSEC=true; WITH_TRAEFIK=true; shift ;;
     --crowdsec-bouncer-key) CROWDSEC_BOUNCER_KEY="$2"; WITH_CROWDSEC=true; WITH_TRAEFIK=true; shift 2 ;;
@@ -169,6 +173,9 @@ load_existing_deploy_config() {
       TRAEFIK_HOST)
         [ -z "${TRAEFIK_HOST}" ] && TRAEFIK_HOST="${value}"
         ;;
+      TRAEFIK_TRUSTED_IPS)
+        [ -z "${TRAEFIK_TRUSTED_IPS}" ] && TRAEFIK_TRUSTED_IPS="${value}"
+        ;;
       WITH_CROWDSEC)
         [ "${WITH_CROWDSEC}" = false ] && WITH_CROWDSEC="${value}"
         ;;
@@ -218,6 +225,44 @@ normalize_domains_value() {
   value="${value//\"/}"
   value="${value//\'/}"
   printf '%s' "${value}"
+}
+
+format_yaml_inline_list() {
+  local value="${1:-}"
+  local item
+  local rendered=""
+  local -a items
+
+  value="${value//[[:space:]]/}"
+  value="${value//\"/}"
+  value="${value//\'/}"
+  IFS=',' read -r -a items <<< "$value"
+  for item in "${items[@]}"; do
+    if [ -n "$item" ]; then
+      rendered="${rendered:+${rendered}, }\"${item}\""
+    fi
+  done
+  if [ -n "$rendered" ]; then
+    printf '[%s]' "$rendered"
+  else
+    printf '[]'
+  fi
+}
+
+normalize_trusted_ips_value() {
+  local value="${1:-}"
+  local normalized=""
+  local item
+  local -a items
+
+  value="${value//[[:space:]]/}"
+  value="${value//\"/}"
+  value="${value//\'/}"
+  IFS=',' read -r -a items <<< "$value"
+  for item in "${items[@]}"; do
+    [ -n "$item" ] && normalized="${normalized:+${normalized},}${item}"
+  done
+  printf '%s' "$normalized"
 }
 
 domain_list_contains() {
@@ -465,6 +510,8 @@ prepare_deploy_config() {
   if [ -z "$DNS_RECORD_PROXIED" ]; then
     DNS_RECORD_PROXIED=true
   fi
+  TRAEFIK_TRUSTED_IPS="$(normalize_trusted_ips_value "${TRAEFIK_TRUSTED_IPS}")"
+  TRAEFIK_TRUSTED_IPS_YAML="$(format_yaml_inline_list "${TRAEFIK_TRUSTED_IPS}")"
   if [ "$AUTO_YES" = true ] && [ "$DNS_AUTO_CREATE" = true ] && [ -z "$SERVER_PUBLIC_IP" ]; then
     SERVER_PUBLIC_IP="$(detect_server_public_ip)"
   fi
@@ -513,6 +560,7 @@ prompt_deploy_questions() {
     [ -n "$DOMAIN" ] && default_traefik_host="traefik.${DOMAIN}"
     ask_text TRAEFIK_HOST "Hostname Traefik" "${default_traefik_host}"
     ask_text ACME_EMAIL "Email Let's Encrypt"
+    ask_text TRAEFIK_TRUSTED_IPS "CIDR proxies de confiance Traefik (Cloudflare si proxy activé)"
   fi
 
   section_title "5. OAuth2 GitHub"
@@ -546,6 +594,7 @@ show_deploy_plan() {
   echo "Cloudflare API key   : $(display_secret "${CF_API_KEY}")"
   echo "Traefik              : $(display_bool "${WITH_TRAEFIK}")"
   echo "Host Traefik         : $(display_value "${TRAEFIK_HOST}")"
+  echo "Trusted IPs Traefik  : $(display_value "${TRAEFIK_TRUSTED_IPS}" "aucune")"
   echo "Let's Encrypt email  : $(display_value "${ACME_EMAIL}")"
   echo "CrowdSec             : $(display_bool "${WITH_CROWDSEC}")"
   if [ "${WITH_CROWDSEC}" = true ]; then
@@ -690,6 +739,9 @@ validate_deploy_config() {
       err "--cf-api-email et --cf-api-key sont requis avec --with-traefik pour le DNS challenge Cloudflare."
       return 1
     fi
+    if [ "$WITH_CROWDSEC" = true ] && [ "${DNS_RECORD_PROXIED:-false}" = true ] && [ -z "$TRAEFIK_TRUSTED_IPS" ]; then
+      warn "Cloudflare proxy semble activé sans --traefik-trusted-ips : CrowdSec peut voir et bannir les IP Cloudflare au lieu des visiteurs."
+    fi
   fi
 
   if [ "$OAUTH2_ENABLED" = true ]; then
@@ -801,6 +853,7 @@ DNS_PROVIDER=${DNS_PROVIDER}
 DNS_RECORD_TTL=${DNS_RECORD_TTL}
 DNS_RECORD_PROXIED=${DNS_RECORD_PROXIED}
 WITH_TRAEFIK=${WITH_TRAEFIK}
+TRAEFIK_TRUSTED_IPS=${TRAEFIK_TRUSTED_IPS}
 WITH_CROWDSEC=${WITH_CROWDSEC}
 CROWDSEC_BOUNCER_KEY=${CROWDSEC_BOUNCER_KEY}
 OAUTH2_ENABLED=${OAUTH2_ENABLED}
@@ -870,6 +923,7 @@ echo "IP publique DNS  : $(display_value "${SERVER_PUBLIC_IP}")"
 echo ""
 echo "Traefik          : $(display_bool "${WITH_TRAEFIK}")"
 echo "Host Traefik     : $(display_value "${TRAEFIK_HOST}")"
+echo "Trusted IPs      : $(display_value "${TRAEFIK_TRUSTED_IPS}" "aucune")"
 echo "CrowdSec         : $(display_bool "${WITH_CROWDSEC}")"
 echo "OAuth2 Proxy     : $(display_bool "${OAUTH2_ENABLED}")"
 echo "Host OAuth2      : $(display_value "${OAUTH2_HOST}")"
