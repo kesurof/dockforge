@@ -506,10 +506,10 @@ manage_restart() {
 
   if [ "${WITH_CROWDSEC}" = true ] && [ -f "${CROWDSEC_DIR}/docker-compose.yml" ]; then
     if [ "${DRY_RUN:-false}" = true ]; then
-      warn "[DRY-RUN] Redémarrage CrowdSec prévu : cd ${CROWDSEC_DIR} && docker compose up -d"
+      warn "[DRY-RUN] Redémarrage CrowdSec prévu : cd ${CROWDSEC_DIR} && docker compose restart"
     else
       info "Redémarrage de CrowdSec..."
-      if ! (cd "${CROWDSEC_DIR}" && docker compose up -d); then
+      if ! (cd "${CROWDSEC_DIR}" && docker compose restart); then
         err "Échec du redémarrage de CrowdSec."
         exit 1
       fi
@@ -520,20 +520,20 @@ manage_restart() {
 
   if [ -f "${TRAEFIK_DIR}/docker-compose.yml" ]; then
     if [ "${DRY_RUN:-false}" = true ]; then
-      warn "[DRY-RUN] Redémarrage Traefik prévu : cd ${TRAEFIK_DIR} && docker compose up -d"
+      warn "[DRY-RUN] Redémarrage Traefik prévu : cd ${TRAEFIK_DIR} && docker compose restart"
     else
       info "Redémarrage de Traefik..."
-      (cd "${TRAEFIK_DIR}" && docker compose up -d) || warn "Échec du redémarrage de Traefik."
+      (cd "${TRAEFIK_DIR}" && docker compose restart) || warn "Échec du redémarrage de Traefik."
     fi
     restarted=true
   fi
 
   if [ "${OAUTH2_ENABLED}" = true ] && [ -f "${OAUTH2_DIR}/docker-compose.yml" ]; then
     if [ "${DRY_RUN:-false}" = true ]; then
-      warn "[DRY-RUN] Redémarrage OAuth2 Proxy prévu : cd ${OAUTH2_DIR} && docker compose up -d"
+      warn "[DRY-RUN] Redémarrage OAuth2 Proxy prévu : cd ${OAUTH2_DIR} && docker compose restart"
     else
       info "Redémarrage de OAuth2 Proxy..."
-      (cd "${OAUTH2_DIR}" && docker compose up -d) || warn "Échec du redémarrage de OAuth2 Proxy."
+      (cd "${OAUTH2_DIR}" && docker compose restart) || warn "Échec du redémarrage de OAuth2 Proxy."
     fi
     restarted=true
   fi
@@ -837,11 +837,12 @@ manage_crowdsec_appsec_install_collections() {
 
 manage_crowdsec_appsec_restart_crowdsec() {
   if [ "${DRY_RUN:-false}" = true ]; then
-    warn "[DRY-RUN] cd ${CROWDSEC_DIR} && docker compose up -d"
+    warn "[DRY-RUN] cd ${CROWDSEC_DIR} && docker compose up -d --force-recreate"
     warn "[DRY-RUN] Vérification disponibilité CrowdSec"
     return 0
   fi
-  (cd "${CROWDSEC_DIR}" && docker compose up -d) || { err "Échec du redémarrage de CrowdSec."; exit 1; }
+  info "Recréation de CrowdSec pour appliquer la configuration AppSec..."
+  (cd "${CROWDSEC_DIR}" && docker compose up -d --force-recreate) || { err "Échec du redémarrage de CrowdSec."; exit 1; }
   manage_wait_crowdsec_ready
 }
 
@@ -851,10 +852,11 @@ manage_crowdsec_appsec_restart_traefik() {
     return 0
   fi
   if [ "${DRY_RUN:-false}" = true ]; then
-    warn "[DRY-RUN] cd ${TRAEFIK_DIR} && docker compose up -d"
+    warn "[DRY-RUN] cd ${TRAEFIK_DIR} && docker compose up -d --force-recreate"
     return 0
   fi
-  (cd "${TRAEFIK_DIR}" && docker compose up -d) || { err "Échec du redémarrage de Traefik."; exit 1; }
+  info "Recréation de Traefik pour appliquer la configuration AppSec..."
+  (cd "${TRAEFIK_DIR}" && docker compose up -d --force-recreate) || { err "Échec du redémarrage de Traefik."; exit 1; }
 }
 
 manage_crowdsec_appsec_status() {
@@ -1025,10 +1027,10 @@ manage_crowdsec_restart() {
   manage_crowdsec_require
 
   if [ "${DRY_RUN:-false}" = true ]; then
-    warn "[DRY-RUN] cd ${CROWDSEC_DIR} && docker compose up -d"
+    warn "[DRY-RUN] cd ${CROWDSEC_DIR} && docker compose restart"
     return 0
   fi
-  (cd "${CROWDSEC_DIR}" && docker compose up -d) || err "Échec du redémarrage de CrowdSec."
+  (cd "${CROWDSEC_DIR}" && docker compose restart) || err "Échec du redémarrage de CrowdSec."
   ok "CrowdSec redémarré."
 }
 
@@ -1130,16 +1132,16 @@ manage_restart_traefik_only() {
     manage_wait_crowdsec_ready
   fi
 
-  info "Redémarrage de Traefik..."
+  info "Recréation de Traefik pour appliquer la configuration..."
   if [ "${DRY_RUN:-false}" = true ]; then
-    warn "[DRY-RUN] cd ${TRAEFIK_DIR} && docker compose up -d"
+    warn "[DRY-RUN] cd ${TRAEFIK_DIR} && docker compose up -d --force-recreate"
     return 0
   fi
-  if ! (cd "${TRAEFIK_DIR}" && docker compose up -d); then
+  if ! (cd "${TRAEFIK_DIR}" && docker compose up -d --force-recreate); then
     err "Échec du redémarrage de Traefik."
     exit 1
   fi
-  ok "Traefik redémarré."
+  ok "Traefik recréé."
 }
 
 manage_trusted_ips_apply_cloudflare() {

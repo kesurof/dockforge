@@ -192,11 +192,12 @@ manage_update_compose_up() {
   local dir="$1"
 
   if [ "${DRY_RUN:-false}" = true ]; then
-    warn "[DRY-RUN] cd ${dir} && docker compose up -d"
+    warn "[DRY-RUN] cd ${dir} && docker compose up -d --force-recreate"
     return 0
   fi
-  (cd "$dir" && docker compose up -d) || {
-    err "Échec docker compose up -d : ${dir}"
+  info "Recréation du conteneur pour appliquer la configuration..."
+  (cd "$dir" && docker compose up -d --force-recreate) || {
+    err "Échec docker compose up -d --force-recreate : ${dir}"
     exit 1
   }
 }
@@ -237,12 +238,12 @@ manage_update_one_service() {
   [ "${DRY_RUN:-false}" = true ] || UPDATE_PULL_DONE=true
 
   if [ "${DRY_RUN:-false}" = true ]; then
-    info "Redémarrage ${UPDATE_SERVICE_LABEL} prévu (dry-run)..."
+    info "Recréation ${UPDATE_SERVICE_LABEL} prévue (dry-run)..."
   else
-    info "Redémarrage ${UPDATE_SERVICE_LABEL}..."
+    info "Recréation ${UPDATE_SERVICE_LABEL}..."
   fi
   manage_update_compose_up "$UPDATE_COMPOSE_DIR"
-  [ "${DRY_RUN:-false}" = true ] || UPDATE_RESTARTED_SERVICES+=("${UPDATE_SERVICE_LABEL}")
+  [ "${DRY_RUN:-false}" = true ] || UPDATE_RECREATED_SERVICES+=("${UPDATE_SERVICE_LABEL}")
 
   if [ "$service" = "crowdsec" ]; then
     manage_wait_crowdsec_ready
@@ -284,10 +285,10 @@ manage_update_print_final_summary() {
   echo "Backup créé          : ${UPDATE_BACKUP_CREATED:-non}"
   if [ "${DRY_RUN:-false}" = true ]; then
     echo "Pull                 : prévu (dry-run)"
-    echo "Redémarrage          : prévu (dry-run)"
+    echo "Recréation          : prévu (dry-run)"
   else
     echo "Pull                 : $( [ "${UPDATE_PULL_DONE:-false}" = true ] && echo oui || echo non )"
-    echo "Redémarrage          : ${UPDATE_RESTARTED_SERVICES[*]:-non}"
+    echo "Recréation          : ${UPDATE_RECREATED_SERVICES[*]:-non}"
   fi
   echo "Statut final         :"
   for service in "${services[@]}"; do
@@ -336,7 +337,7 @@ manage_update() {
 
   UPDATE_BACKUP_CREATED=""
   UPDATE_PULL_DONE=false
-  UPDATE_RESTARTED_SERVICES=()
+  UPDATE_RECREATED_SERVICES=()
   UPDATE_DOCTOR_STATUS=""
 
   manage_update_print_summary "$requested" "${services[@]}"

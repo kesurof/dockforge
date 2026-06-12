@@ -430,7 +430,7 @@ app_update() {
 
   if [ "${DRY_RUN:-false}" = true ]; then
     warn "[DRY-RUN] cd ${APP_MANAGED_DIR} && docker compose pull"
-    warn "[DRY-RUN] cd ${APP_MANAGED_DIR} && docker compose up -d"
+    warn "[DRY-RUN] cd ${APP_MANAGED_DIR} && docker compose up -d --force-recreate"
     ok "Simulation de mise à jour de ${APP_MANAGED_NAME} terminée."
     return 0
   fi
@@ -438,8 +438,8 @@ app_update() {
   app_require_docker
   info "Pull ${APP_MANAGED_NAME}..."
   (cd "${APP_MANAGED_DIR}" && docker compose pull) || { err "Échec docker compose pull pour ${APP_MANAGED_NAME}."; exit 1; }
-  info "Redémarrage ${APP_MANAGED_NAME}..."
-  (cd "${APP_MANAGED_DIR}" && docker compose up -d) || { err "Échec docker compose up -d pour ${APP_MANAGED_NAME}."; exit 1; }
+  info "Recréation de ${APP_MANAGED_NAME} pour appliquer la configuration..."
+  (cd "${APP_MANAGED_DIR}" && docker compose up -d --force-recreate) || { err "Échec docker compose up -d --force-recreate pour ${APP_MANAGED_NAME}."; exit 1; }
   ok "App ${APP_MANAGED_NAME} mise à jour."
 }
 
@@ -615,11 +615,11 @@ app_install() {
   app_write_env_file "${INSTALLED_DIR}/${app_name}.env" "$app_name" "$app_dir" "$app_data"
 
   if [ "${DRY_RUN:-false}" = true ]; then
-    warn "[DRY-RUN] cd ${app_dir} && docker compose up -d"
+    warn "[DRY-RUN] cd ${app_dir} && docker compose up -d --force-recreate"
     ok "Simulation d'installation de ${app_name} terminée."
   else
     info "Démarrage de ${app_name}..."
-    if ! (cd "${app_dir}" && docker compose up -d); then
+    if ! (cd "${app_dir}" && docker compose up -d --force-recreate); then
       err "Échec du démarrage de ${app_name}. Stack générée dans ${app_dir}."
       exit 1
     fi
