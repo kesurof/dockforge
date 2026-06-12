@@ -78,6 +78,10 @@ Infrastructure :
 ./ksf.sh doctor
 ./ksf.sh render
 ./ksf.sh restart
+./ksf.sh update crowdsec
+./ksf.sh update traefik
+./ksf.sh update oauth2
+./ksf.sh update all
 ./ksf.sh backup create
 ./ksf.sh backup list
 ./ksf.sh backup status
@@ -174,19 +178,37 @@ Vérifier une sauvegarde :
 
 ```bash
 ./ksf.sh backup verify ksf-backup-YYYYMMDD-HHMMSS.tar.gz
+./ksf.sh backup verify latest
 ```
 
 Restaurer une sauvegarde :
 
 ```bash
 ./ksf.sh backup restore ksf-backup-YYYYMMDD-HHMMSS.tar.gz
+./ksf.sh backup restore latest --yes
 ```
 
 Simuler une restauration sans modifier le serveur :
 
 ```bash
 ./ksf.sh backup restore ksf-backup-YYYYMMDD-HHMMSS.tar.gz --dry-run
+./ksf.sh backup restore latest --dry-run
 ```
+
+`latest` désigne la sauvegarde locale KSF la plus récente dans `~/serverbox/backups`.
+
+## Mise à jour système
+
+Les stacks système KSF se mettent à jour via `ksf.sh update`. Chaque update crée un backup automatique, vérifie le backup, exécute `docker compose pull`, redémarre la stack puis lance `doctor`.
+
+```bash
+./ksf.sh update crowdsec
+./ksf.sh update traefik
+./ksf.sh update oauth2
+./ksf.sh update all
+```
+
+`./ksf.sh update all` applique l'ordre sûr : CrowdSec, Traefik, puis OAuth2 Proxy. Utilisez `--dry-run` pour afficher les actions sans modifier le runtime, et `-y` ou `--yes` pour exécuter sans confirmation interactive.
 
 Nettoyer les anciennes sauvegardes locales :
 

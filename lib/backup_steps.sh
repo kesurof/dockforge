@@ -61,6 +61,19 @@ backup_resolve_archive() {
   fi
 
   case "$input" in
+    '<nom-du-backup>')
+      err "Remplacez <nom-du-backup> par un vrai nom de fichier, ou utilisez latest."
+      exit 1
+      ;;
+    latest)
+      local latest
+      latest=$(backup_latest_archive || true)
+      if [ -z "$latest" ]; then
+        err "Aucune sauvegarde disponible pour l'alias latest."
+        exit 1
+      fi
+      printf '%s' "$latest"
+      ;;
     /*)
       printf '%s' "$input"
       ;;
@@ -337,6 +350,8 @@ backup_create() {
   echo "Composants inclus  : ${BACKUP_COMPONENTS[*]:-aucun}"
   echo "Vérifier           : ./ksf.sh backup verify $(basename "$archive")"
   echo "Restaurer          : ./ksf.sh backup restore $(basename "$archive")"
+  echo "Vérifier latest    : ./ksf.sh backup verify latest"
+  echo "Tester restore     : ./ksf.sh backup restore latest --dry-run"
 }
 
 backup_list() {

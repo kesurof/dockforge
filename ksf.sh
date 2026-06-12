@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================
 # KSF — Gestion de l'infrastructure existante
-# Status, config, routes, render, restart, protect, doctor, clean-data, backup, CrowdSec, trusted IPs
+# Status, config, routes, render, restart, protect, doctor, clean-data, backup, update, CrowdSec, trusted IPs
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -16,6 +16,7 @@ CLEAN_DATA_APP=""
 BACKUP_COMMAND=""
 BACKUP_ARG=""
 BACKUP_KEEP="5"
+UPDATE_SERVICE=""
 CROWDSEC_COMMAND=""
 CROWDSEC_ARG=""
 CROWDSEC_DURATION=""
@@ -37,6 +38,7 @@ Commandes :
   restart               Relancer Traefik, OAuth2 Proxy et CrowdSec
   doctor                Diagnostic global de la plateforme
   backup <commande>     Sauvegarder/restaurer KSF (create, list, status, verify, restore, prune)
+  update <service>      Mettre à jour une stack système (crowdsec, traefik, oauth2, all)
   crowdsec <commande>   Gérer CrowdSec (status, logs, decisions, alerts, metrics, bouncers, ban, unban, flush-decisions, enroll, console-status, restart, appsec)
   trusted-ips cloudflare  Afficher les CIDR Cloudflare prêts pour TRAEFIK_TRUSTED_IPS
   trusted-ips apply cloudflare  Appliquer les CIDR Cloudflare et redémarrer Traefik
@@ -60,9 +62,15 @@ Exemples :
   $0 backup list
   $0 backup status
   $0 backup verify ksf-backup-YYYYMMDD-HHMMSS.tar.gz
+  $0 backup verify latest
   $0 backup restore ksf-backup-YYYYMMDD-HHMMSS.tar.gz
+  $0 backup restore latest --dry-run
   $0 backup prune --dry-run
   $0 backup prune -y
+  $0 update crowdsec
+  $0 update traefik
+  $0 update oauth2
+  $0 update all
   $0 crowdsec status
   $0 crowdsec logs
   $0 crowdsec decisions
@@ -174,11 +182,23 @@ while [[ $# -gt 0 ]]; do
             ;;
         esac
         ;;
+      update)
+        case "$1" in
+          --base-dir|--dry-run|-y|--yes|-h|--help) ;;
+          *)
+            if [ -z "$UPDATE_SERVICE" ]; then
+              UPDATE_SERVICE="$1"
+              shift
+              continue
+            fi
+            ;;
+        esac
+        ;;
     esac
   fi
 
   case "$1" in
-    status|config|routes|protect|render|restart|doctor|clean-data|backup|crowdsec|trusted-ips)
+    status|config|routes|protect|render|restart|doctor|clean-data|backup|update|crowdsec|trusted-ips)
       if [ -n "$COMMAND" ]; then
         err "Commande déjà définie : ${COMMAND}"
         exit 1
@@ -243,6 +263,9 @@ while [[ $# -gt 0 ]]; do
             usage
             ;;
         esac
+      elif [ "$COMMAND" = "update" ] && [ -z "$UPDATE_SERVICE" ]; then
+        UPDATE_SERVICE="$1"
+        shift
       else
         err "Argument inconnu : $1"
         usage
@@ -285,6 +308,9 @@ case "$COMMAND" in
     ;;
   backup)
     manage_backup "${BACKUP_COMMAND}" "${BACKUP_ARG}"
+    ;;
+  update)
+    manage_update "${UPDATE_SERVICE}"
     ;;
   crowdsec)
     manage_crowdsec "${CROWDSEC_COMMAND}" "${CROWDSEC_ARG}" "${CROWDSEC_DURATION}"
