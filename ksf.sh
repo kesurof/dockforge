@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================
 # KSF — Gestion de l'infrastructure existante
-# Status, config, routes, render, restart, protect, doctor, clean-data, backup, update, CrowdSec, trusted IPs
+# Menu interactif, status, config, routes, render, restart, protect, doctor, clean-data, backup, update, CrowdSec, trusted IPs
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -30,6 +30,9 @@ usage() {
 Usage: $0 <command> [options]
 
 Commandes :
+
+  Menu :
+  menu                  Afficher le menu interactif (par défaut sans argument)
 
   Diagnostic :
   status                Afficher l'état global (Traefik, OAuth2 Proxy, apps)
@@ -197,7 +200,7 @@ while [[ $# -gt 0 ]]; do
   fi
 
   case "$1" in
-    status|config|routes|protect|render|restart|doctor|clean-data|backup|update|crowdsec|trusted-ips)
+    menu|status|config|routes|protect|render|restart|doctor|clean-data|backup|update|crowdsec|trusted-ips)
       if [ -n "$COMMAND" ]; then
         err "Commande déjà définie : ${COMMAND}"
         exit 1
@@ -274,7 +277,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$COMMAND" ]; then
-  usage
+  source "${SCRIPT_DIR}/lib/menu.sh"
+  menu_main
+  exit 0
 fi
 
 source "${SCRIPT_DIR}/lib/manage_steps.sh"
@@ -282,6 +287,10 @@ source "${SCRIPT_DIR}/lib/backup_steps.sh"
 source "${SCRIPT_DIR}/lib/update_steps.sh"
 
 case "$COMMAND" in
+  menu)
+    source "${SCRIPT_DIR}/lib/menu.sh"
+    menu_main
+    ;;
   status)
     manage_status
     ;;
