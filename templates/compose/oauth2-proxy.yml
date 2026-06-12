@@ -7,6 +7,8 @@ services:
       - proxy
     ports:
       - "127.0.0.1:4180:4180"
+    command:
+      - "--custom-templates-dir=/etc/oauth2-proxy/templates"
     environment:
       - "OAUTH2_PROXY_PROVIDER=github"
       - "OAUTH2_PROXY_SCOPE=${OAUTH2_SCOPE}"
@@ -27,6 +29,8 @@ services:
       - "OAUTH2_PROXY_PASS_AUTHORIZATION_HEADER=true"
       - "OAUTH2_PROXY_PASS_ACCESS_TOKEN=true"
       - "OAUTH2_PROXY_PASS_USER_HEADERS=true"
+    volumes:
+      - "./templates:/etc/oauth2-proxy/templates:ro"
 
 networks:
   proxy:

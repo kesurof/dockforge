@@ -424,6 +424,10 @@ manage_render() {
   fi
 
   if [ "${OAUTH2_ENABLED}" = true ]; then
+    run mkdir -p "${OAUTH2_DIR}"
+    echo "${dry_run_prefix}Rendu de la stack OAuth2 Proxy..."
+    render_oauth2_compose_runtime "${OAUTH2_DIR}/docker-compose.yml"
+
     echo "${dry_run_prefix}Rendu de middleware-oauth2.yml..."
     render_oauth2_middleware_template "${TEMPLATE_DIR}/traefik/middleware-oauth2.yml" "${TRAEFIK_DYNAMIC_DIR}/middleware-oauth2.yml"
 
@@ -1275,6 +1279,24 @@ manage_doctor() {
   if [ "${OAUTH2_ENABLED}" = true ]; then
     if [ -f "${OAUTH2_DIR}/docker-compose.yml" ]; then
       _manage_check ok "Stack OAuth2 Proxy" "docker-compose.yml présent"
+      if [ -f "${OAUTH2_DIR}/templates/sign_in.html" ]; then
+        _manage_check ok "Template OAuth2 Proxy" "templates/sign_in.html présent"
+      else
+        _manage_check warn "Template OAuth2 Proxy" "templates/sign_in.html absent (lancer: ./ksf.sh render)"
+        ((warnings++)) || true
+      fi
+      if grep -q -- '--custom-templates-dir=/etc/oauth2-proxy/templates' "${OAUTH2_DIR}/docker-compose.yml" 2>/dev/null; then
+        _manage_check ok "Option OAuth2 templates" "custom-templates-dir configuré"
+      else
+        _manage_check warn "Option OAuth2 templates" "--custom-templates-dir absent"
+        ((warnings++)) || true
+      fi
+      if grep -q './templates:/etc/oauth2-proxy/templates:ro' "${OAUTH2_DIR}/docker-compose.yml" 2>/dev/null; then
+        _manage_check ok "Montage OAuth2 templates" "./templates:/etc/oauth2-proxy/templates:ro"
+      else
+        _manage_check warn "Montage OAuth2 templates" "montage templates absent"
+        ((warnings++)) || true
+      fi
     else
       _manage_check err "Stack OAuth2 Proxy" "docker-compose.yml absent"
       ((errors++)) || true

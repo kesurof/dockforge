@@ -174,12 +174,8 @@ step_oauth2() {
 
   local oauth2_compose_file="${OAUTH2_DIR}/docker-compose.yml"
 
-  render_template "${TEMPLATE_DIR}/compose/oauth2-proxy.yml" "${oauth2_compose_file}"
+  render_oauth2_compose_runtime "${oauth2_compose_file}"
   write_oauth2_allowed_emails_file
-  if [ "${DRY_RUN:-false}" = false ]; then
-    prune_empty_oauth2_env_lines "${oauth2_compose_file}"
-    insert_oauth2_allowed_emails_volume "${oauth2_compose_file}"
-  fi
   render_oauth2_middleware_template "${TEMPLATE_DIR}/traefik/middleware-oauth2.yml" "${TRAEFIK_DYNAMIC_DIR}/middleware-oauth2.yml"
   render_template "${TEMPLATE_DIR}/traefik/route-oauth2-proxy.yml" "${TRAEFIK_DYNAMIC_DIR}/route-oauth2-proxy.yml"
 

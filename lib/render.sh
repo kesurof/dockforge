@@ -297,3 +297,80 @@ render_oauth2_middleware_template() {
 
   render_template "$template" "$destination"
 }
+
+render_oauth2_prune_empty_env_lines() {
+  local compose_file="$1"
+  local tmp_file="${compose_file}.tmp"
+  local line
+
+  : > "${tmp_file}"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '      - "OAUTH2_PROXY_EMAIL_DOMAINS="'|'      - "OAUTH2_PROXY_AUTHENTICATED_EMAILS_FILE="'|'      - "OAUTH2_PROXY_GITHUB_USERS="')
+        continue
+        ;;
+    esac
+    printf '%s\n' "$line" >> "${tmp_file}"
+  done < "${compose_file}"
+  mv "${tmp_file}" "${compose_file}"
+}
+
+render_oauth2_insert_allowed_emails_volume() {
+  if [ "${OAUTH2_AUTH_MODE:-}" != "email" ]; then
+    return 0
+  fi
+
+  local compose_file="$1"
+  local tmp_file="${compose_file}.tmp"
+  local line
+  local inserted=false
+
+  : > "${tmp_file}"
+  while IFS= read -r line || [ -n "$line" ]; do
+    printf '%s\n' "$line" >> "${tmp_file}"
+    if [ "$inserted" = false ] && [ "$line" = '      - "./templates:/etc/oauth2-proxy/templates:ro"' ]; then
+      printf '      - "./allowed-emails.txt:/auth/allowed-emails.txt:ro"\n' >> "${tmp_file}"
+      inserted=true
+    fi
+  done < "${compose_file}"
+
+  if [ "$inserted" = false ]; then
+    : > "${tmp_file}"
+    while IFS= read -r line || [ -n "$line" ]; do
+      if [ "$inserted" = false ] && [ "$line" = "networks:" ]; then
+        printf '    volumes:\n' >> "${tmp_file}"
+        printf '      - "./templates:/etc/oauth2-proxy/templates:ro"\n' >> "${tmp_file}"
+        printf '      - "./allowed-emails.txt:/auth/allowed-emails.txt:ro"\n' >> "${tmp_file}"
+        printf '\n' >> "${tmp_file}"
+        inserted=true
+      fi
+      printf '%s\n' "$line" >> "${tmp_file}"
+    done < "${compose_file}"
+  fi
+
+  mv "${tmp_file}" "${compose_file}"
+}
+
+render_oauth2_custom_templates() {
+  local source_template="${SCRIPT_DIR}/templates/oauth2-proxy/sign_in.html"
+  local destination_dir="${OAUTH2_DIR}/templates"
+
+  if [ ! -f "$source_template" ]; then
+    err "Template OAuth2 Proxy introuvable : ${source_template}"
+    exit 1
+  fi
+
+  run mkdir -p "$destination_dir"
+  render_template "$source_template" "${destination_dir}/sign_in.html"
+}
+
+render_oauth2_compose_runtime() {
+  local compose_file="$1"
+
+  render_template "${TEMPLATE_DIR}/compose/oauth2-proxy.yml" "$compose_file"
+  if [ "${DRY_RUN:-false}" = false ]; then
+    render_oauth2_prune_empty_env_lines "$compose_file"
+    render_oauth2_insert_allowed_emails_volume "$compose_file"
+  fi
+  render_oauth2_custom_templates
+}
