@@ -1,3 +1,6 @@
+# ksf-web — Interface d'administration KSF
+# ATTENTION : le socket Docker monté (/var/run/docker.sock) donne des droits élevés sur l'hôte.
+# L'accès est restreint à OAuth2 Proxy + Traefik. Ne jamais exposer publiquement sans authentification.
 services:
   ksf-web:
     build:
@@ -7,6 +10,8 @@ services:
     restart: unless-stopped
     networks:
       - proxy
+    group_add:
+      - "${DOCKER_GID}"
     environment:
       - KSF_BASE_DIR=/serverbox
       - KSF_REPO_DIR=/ksf

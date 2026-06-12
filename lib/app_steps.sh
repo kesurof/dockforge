@@ -421,6 +421,7 @@ app_update() {
   app_confirm_action "la mise à jour" "$app_name"
   app_create_backup_before "update ${app_name}"
 
+  app_resolve_docker_gid
   render_template "${app_template_dir}/compose.yml" "${APP_MANAGED_DIR}/docker-compose.yml"
   app_write_env_file "${APP_MANAGED_DIR}/app.env" "$app_name" "$APP_MANAGED_DIR" "$APP_MANAGED_DATA"
   app_write_env_file "${INSTALLED_DIR}/${app_name}.env" "$app_name" "$APP_MANAGED_DIR" "$APP_MANAGED_DATA"
@@ -561,6 +562,16 @@ resolve_app_auth() {
   fi
 }
 
+app_resolve_docker_gid() {
+  if [ -n "${DOCKER_GID:-}" ]; then
+    return 0
+  fi
+  DOCKER_GID="$(getent group docker 2>/dev/null | cut -d: -f3 || true)"
+  if [ -z "${DOCKER_GID}" ]; then
+    warn "Groupe docker introuvable sur l'hôte. L'accès au socket Docker pourrait échouer pour les apps qui le nécessitent."
+  fi
+}
+
 app_install() {
   local app_name="$1"
   local app_template_dir="${APP_TEMPLATE_DIR}/${app_name}"
@@ -600,6 +611,7 @@ app_install() {
   fi
 
   run mkdir -p "${INSTALLED_DIR}" "${app_dir}" "${app_data}"
+  app_resolve_docker_gid
   render_template "${app_template_dir}/compose.yml" "${app_dir}/docker-compose.yml"
   app_write_env_file "${app_dir}/app.env" "$app_name" "$app_dir" "$app_data"
   ok "Stack ${app_name} générée dans ${app_dir}"
