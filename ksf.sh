@@ -61,6 +61,10 @@ Commandes :
   Clean-data :
   clean-data [app]      Lister ou supprimer les données conservées
 
+  CLI :
+  install-cli           Installer / réparer la commande globale ksf
+  uninstall-cli         Supprimer la commande globale ksf
+
 Options :
   --base-dir PATH       Répertoire racine (défaut: ~/serverbox)
   --dry-run             Affiche les actions sans modifier les fichiers
@@ -87,6 +91,8 @@ Exemples :
   $0 trusted-ips apply cloudflare
   $0 clean-data
   $0 clean-data radarr
+  $0 install-cli
+  $0 uninstall-cli
 EOF
   exit 0
 }
@@ -200,7 +206,7 @@ while [[ $# -gt 0 ]]; do
   fi
 
   case "$1" in
-    menu|status|config|routes|protect|render|restart|doctor|clean-data|backup|update|crowdsec|trusted-ips)
+    menu|status|config|routes|protect|render|restart|doctor|clean-data|backup|update|crowdsec|trusted-ips|install-cli|uninstall-cli)
       if [ -n "$COMMAND" ]; then
         err "Commande déjà définie : ${COMMAND}"
         exit 1
@@ -286,6 +292,125 @@ source "${SCRIPT_DIR}/lib/manage_steps.sh"
 source "${SCRIPT_DIR}/lib/backup_steps.sh"
 source "${SCRIPT_DIR}/lib/update_steps.sh"
 
+# ---------- Install / uninstall CLI ----------
+
+manage_install_cli() {
+  local link_path="${HOME}/.local/bin/ksf"
+  local target="${SCRIPT_DIR}/ksf.sh"
+  local bin_dir
+  bin_dir="$(dirname "$link_path")"
+
+  info "Installation de la commande globale ksf..."
+  info "Cible : ${target}"
+  info "Lien  : ${link_path}"
+
+  if [ ! -f "$target" ]; then
+    err "Script ksf.sh introuvable : ${target}"
+    exit 1
+  fi
+
+  run mkdir -p "$bin_dir"
+
+  if [ ! -x "$target" ]; then
+    info "Rendre ksf.sh exécutable..."
+    run chmod +x "$target"
+  fi
+
+  if [ -L "$link_path" ]; then
+    local current_target
+    current_target="$(readlink -f "$link_path" 2>/dev/null || true)"
+    local real_target
+    real_target="$(readlink -f "$target" 2>/dev/null || true)"
+    if [ "$current_target" = "$real_target" ]; then
+      ok "Le lien existe déjà et pointe vers le bon fichier."
+    else
+      warn "Le lien existe mais pointe vers : ${current_target}"
+      if [ "${AUTO_YES:-false}" = true ] || _manage_cli_confirm "Remplacer le lien existant ?"; then
+        run rm -f "$link_path"
+        run ln -s "$target" "$link_path"
+        ok "Lien mis à jour."
+      else
+        info "Installation annulée."
+        return 0
+      fi
+    fi
+  else
+    run ln -s "$target" "$link_path"
+    ok "Lien créé."
+  fi
+
+  echo ""
+  ok "Commande ksf installée : ${link_path}"
+
+  if ! _manage_cli_path_contains "$bin_dir"; then
+    echo ""
+    warn "${bin_dir} n'est pas dans le PATH."
+    echo ""
+    echo "Ajoute ces lignes dans ton ~/.bashrc :"
+    echo ""
+    echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+    echo ""
+    echo "Puis recharge :"
+    echo "  source ~/.bashrc"
+    echo "  ou reconnecte-toi en SSH"
+  else
+    echo ""
+    info "Vérification :"
+    if command -v ksf >/dev/null 2>&1; then
+      ok "command -v ksf → $(command -v ksf)"
+    else
+      warn "ksf non trouvé dans le PATH actuel."
+      echo "  source ~/.bashrc"
+      echo "  ou reconnecte-toi en SSH"
+    fi
+  fi
+}
+
+manage_uninstall_cli() {
+  local link_path="${HOME}/.local/bin/ksf"
+
+  info "Désinstallation de la commande globale ksf..."
+
+  if [ -L "$link_path" ]; then
+    local target
+    target="$(readlink -f "$link_path" 2>/dev/null || true)"
+    info "Lien trouvé : ${link_path} → ${target}"
+    if [ "${AUTO_YES:-false}" = true ] || _manage_cli_confirm "Supprimer ce lien ?"; then
+      run rm -f "$link_path"
+      ok "Lien supprimé : ${link_path}"
+    else
+      info "Désinstallation annulée."
+    fi
+  elif [ -e "$link_path" ]; then
+    warn "${link_path} existe mais n'est pas un lien symbolique."
+    warn "Aucune suppression effectuée pour éviter tout dommage."
+  else
+    ok "Aucun lien ksf trouvé dans ~/.local/bin/."
+  fi
+}
+
+_manage_cli_confirm() {
+  local message="${1:-Continuer ?}"
+  echo ""
+  echo -n "${message} (oui/non) : "
+  local answer
+  read -r answer
+  case "$answer" in
+    o|O|oui|Oui|OUI|y|Y|yes|Yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+_manage_cli_path_contains() {
+  local dir="$1"
+  local IFS=':'
+  local p
+  for p in $PATH; do
+    [ "$p" = "$dir" ] && return 0
+  done
+  return 1
+}
+
 case "$COMMAND" in
   menu)
     source "${SCRIPT_DIR}/lib/menu.sh"
@@ -326,5 +451,11 @@ case "$COMMAND" in
     ;;
   trusted-ips)
     manage_trusted_ips "${TRUSTED_IPS_COMMAND}" "${TRUSTED_IPS_PROVIDER}"
+    ;;
+  install-cli)
+    manage_install_cli
+    ;;
+  uninstall-cli)
+    manage_uninstall_cli
     ;;
 esac

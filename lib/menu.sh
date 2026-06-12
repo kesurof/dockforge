@@ -308,6 +308,50 @@ _menu_logs() {
   done
 }
 
+# ---------- Paramètres KSF ----------
+
+_menu_settings() {
+  while true; do
+    _menu_header
+    echo "=== Paramètres KSF ==="
+    echo ""
+    echo "  1) Installer / réparer la commande globale ksf"
+    echo "  2) Désinstaller la commande globale ksf"
+    echo "  3) Vérifier la commande globale ksf"
+    echo "  4) Retour"
+    echo ""
+    local choice
+    read -rp "Choix [1-4] : " choice
+    case "$choice" in
+      1) _menu_ksf install-cli ;;
+      2)
+        if _menu_confirm "Désinstaller la commande globale ksf ?"; then
+          _menu_ksf uninstall-cli
+        fi
+        ;;
+      3)
+        echo ""
+        if command -v ksf >/dev/null 2>&1; then
+          local ksf_path
+          ksf_path="$(command -v ksf)"
+          ok "ksf trouvé : ${ksf_path}"
+          if [ -L "$ksf_path" ]; then
+            local link_target
+            link_target="$(readlink -f "$ksf_path" 2>/dev/null || true)"
+            info "Lien symbolique → ${link_target}"
+          fi
+        else
+          warn "ksf non trouvé dans le PATH."
+          echo "  Installe-le avec l'option 1."
+        fi
+        ;;
+      4) return ;;
+      *) err "Choix invalide." ;;
+    esac
+    _menu_pause
+  done
+}
+
 # ---------- Menu principal ----------
 
 menu_main() {
@@ -319,10 +363,11 @@ menu_main() {
     echo "  4) Sauvegardes"
     echo "  5) Sécurité"
     echo "  6) Logs"
-    echo "  7) Quitter"
+    echo "  7) Paramètres KSF"
+    echo "  8) Quitter"
     echo ""
     local choice
-    read -rp "Choix [1-7] : " choice
+    read -rp "Choix [1-8] : " choice
     case "$choice" in
       1) _menu_server_status ;;
       2) _menu_update ;;
@@ -330,7 +375,8 @@ menu_main() {
       4) _menu_backups ;;
       5) _menu_security ;;
       6) _menu_logs ;;
-      7) echo "Au revoir !"; exit 0 ;;
+      7) _menu_settings ;;
+      8) echo "Au revoir !"; exit 0 ;;
       *) err "Choix invalide." ;;
     esac
   done
