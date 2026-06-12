@@ -204,12 +204,22 @@ step_crowdsec() {
 
   render_template "${TEMPLATE_DIR}/compose/crowdsec.yml" "${CROWDSEC_DIR}/docker-compose.yml"
   render_template "${TEMPLATE_DIR}/crowdsec/acquis.yml" "${CROWDSEC_DIR}/acquis.yml"
+  if [ "${CROWDSEC_APPSEC_ENABLED:-false}" = true ]; then
+    render_template "${TEMPLATE_DIR}/crowdsec/appsec.yaml" "${CROWDSEC_DIR}/appsec.yaml"
+  elif [ -f "${CROWDSEC_DIR}/appsec.yaml" ]; then
+    if [ "${DRY_RUN:-false}" = true ]; then
+      warn "[DRY-RUN] Suppression de ${CROWDSEC_DIR}/appsec.yaml"
+    else
+      rm -f "${CROWDSEC_DIR}/appsec.yaml"
+    fi
+  fi
   render_template "${TEMPLATE_DIR}/crowdsec/profiles.yaml" "${CROWDSEC_DIR}/profiles.yaml"
   render_template "${TEMPLATE_DIR}/traefik/middleware-crowdsec.yml" "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml"
 
   if [ "${DRY_RUN:-false}" = false ]; then
     chmod 700 "${CROWDSEC_DIR}/config" "${CROWDSEC_DIR}/data"
     chmod 600 "${CROWDSEC_DIR}/docker-compose.yml"
+    [ -f "${CROWDSEC_DIR}/appsec.yaml" ] && chmod 600 "${CROWDSEC_DIR}/appsec.yaml"
     chmod 600 "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml"
   fi
 

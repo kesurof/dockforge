@@ -18,6 +18,13 @@ RENDER_VARS=(
   DNS_RECORD_TTL
   DNS_RECORD_PROXIED
   WITH_CROWDSEC
+  CROWDSEC_APPSEC_ENABLED
+  CROWDSEC_APPSEC_LISTEN_ADDR
+  CROWDSEC_APPSEC_HOST
+  CROWDSEC_APPSEC_FAILURE_BLOCK
+  CROWDSEC_APPSEC_UNREACHABLE_BLOCK
+  CROWDSEC_APPSEC_COLLECTIONS
+  CROWDSEC_COLLECTIONS
   TRAEFIK_HOST
   OAUTH2_HOST
   OAUTH2_CLIENT_ID
@@ -34,6 +41,8 @@ RENDER_VARS=(
   TRAEFIK_PUBLIC_MIDDLEWARES_BLOCK
   TRAEFIK_OAUTH2_CHAIN_MIDDLEWARES
   TRAEFIK_TRUSTED_IPS_YAML
+  CROWDSEC_APPSEC_VOLUME_BLOCK
+  CROWDSEC_APPSEC_PLUGIN_BLOCK
   APP_HOST
   APP_PUID
   APP_PGID
@@ -49,12 +58,42 @@ RENDER_OPTIONAL_VARS=(
   OAUTH2_AUTHENTICATED_EMAILS_FILE
   OAUTH2_GITHUB_USER
   CROWDSEC_BOUNCER_KEY
+  CROWDSEC_APPSEC_COLLECTIONS
+  CROWDSEC_COLLECTIONS
   TRAEFIK_TRUSTED_IPS
   TRAEFIK_PUBLIC_MIDDLEWARES_BLOCK
   TRAEFIK_TRUSTED_IPS_YAML
+  CROWDSEC_APPSEC_VOLUME_BLOCK
+  CROWDSEC_APPSEC_PLUGIN_BLOCK
 )
 
+render_unique_words() {
+  local words="$*"
+  local word item existing
+  local rendered=""
+
+  for word in $words; do
+    existing=false
+    for item in $rendered; do
+      if [ "$item" = "$word" ]; then
+        existing=true
+        break
+      fi
+    done
+    [ "$existing" = false ] && rendered="${rendered:+${rendered} }${word}"
+  done
+
+  printf '%s' "$rendered"
+}
+
 prepare_render_context() {
+  : "${CROWDSEC_APPSEC_ENABLED:=false}"
+  : "${CROWDSEC_APPSEC_LISTEN_ADDR:=0.0.0.0:7422}"
+  : "${CROWDSEC_APPSEC_HOST:=crowdsec:7422}"
+  : "${CROWDSEC_APPSEC_FAILURE_BLOCK:=true}"
+  : "${CROWDSEC_APPSEC_UNREACHABLE_BLOCK:=true}"
+  : "${CROWDSEC_APPSEC_COLLECTIONS:=crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules}"
+
   if [ "${WITH_CROWDSEC:-false}" = true ]; then
     TRAEFIK_PUBLIC_MIDDLEWARES_BLOCK="      middlewares:
         - security-chain"
@@ -64,6 +103,21 @@ prepare_render_context() {
     TRAEFIK_OAUTH2_CHAIN_MIDDLEWARES="[oauth2-errors, oauth2-auth]"
   fi
   : "${TRAEFIK_TRUSTED_IPS_YAML:=[]}"
+
+  if [ "${CROWDSEC_APPSEC_ENABLED}" = true ]; then
+    CROWDSEC_COLLECTIONS="$(render_unique_words crowdsecurity/traefik ${CROWDSEC_APPSEC_COLLECTIONS})"
+    CROWDSEC_APPSEC_VOLUME_BLOCK='      - "./appsec.yaml:/etc/crowdsec/acquis.d/appsec.yaml:ro"
+'
+    CROWDSEC_APPSEC_PLUGIN_BLOCK="
+          crowdsecAppsecEnabled: true
+          crowdsecAppsecHost: \"${CROWDSEC_APPSEC_HOST}\"
+          crowdsecAppsecFailureBlock: ${CROWDSEC_APPSEC_FAILURE_BLOCK}
+          crowdsecAppsecUnreachableBlock: ${CROWDSEC_APPSEC_UNREACHABLE_BLOCK}"
+  else
+    CROWDSEC_COLLECTIONS="crowdsecurity/traefik"
+    CROWDSEC_APPSEC_VOLUME_BLOCK=""
+    CROWDSEC_APPSEC_PLUGIN_BLOCK=""
+  fi
 }
 
 render_traefik_static_template() {
@@ -122,7 +176,7 @@ render_template() {
   mkdir -p "$(dirname "$destination")"
   printf '%s\n' "$content" > "$destination"
   case "$destination" in
-    */middleware-crowdsec.yml|*/proxy/crowdsec/docker-compose.yml)
+    */middleware-crowdsec.yml|*/proxy/crowdsec/docker-compose.yml|*/proxy/crowdsec/appsec.yaml)
       chmod 600 "$destination"
       ;;
   esac

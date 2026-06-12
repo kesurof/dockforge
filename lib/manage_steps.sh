@@ -47,6 +47,12 @@ manage_require_installation() {
   : "${WITH_TRAEFIK:=false}"
   : "${OAUTH2_ENABLED:=false}"
   : "${WITH_CROWDSEC:=false}"
+  : "${CROWDSEC_APPSEC_ENABLED:=false}"
+  : "${CROWDSEC_APPSEC_LISTEN_ADDR:=0.0.0.0:7422}"
+  : "${CROWDSEC_APPSEC_HOST:=crowdsec:7422}"
+  : "${CROWDSEC_APPSEC_FAILURE_BLOCK:=true}"
+  : "${CROWDSEC_APPSEC_UNREACHABLE_BLOCK:=true}"
+  : "${CROWDSEC_APPSEC_COLLECTIONS:=crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules}"
   : "${TRAEFIK_TRUSTED_IPS:=}"
   TRAEFIK_TRUSTED_IPS_YAML="$(_manage_format_yaml_inline_list "${TRAEFIK_TRUSTED_IPS}")"
   : "${DNS_AUTO_CREATE:=false}"
@@ -97,6 +103,7 @@ manage_status() {
   if [ "${WITH_CROWDSEC}" = true ]; then
     if [ -f "${CROWDSEC_DIR}/docker-compose.yml" ]; then
       ok "CrowdSec : configuré, stack présente"
+      info "AppSec   : $( [ "${CROWDSEC_APPSEC_ENABLED}" = true ] && echo actif || echo inactif )"
     else
       warn "CrowdSec : configuré mais stack absente"
     fi
@@ -392,6 +399,21 @@ manage_render() {
   fi
 
   if [ "${WITH_CROWDSEC}" = true ]; then
+    mkdir -p "${CROWDSEC_DIR}" "${CROWDSEC_DIR}/config" "${CROWDSEC_DIR}/data"
+    echo "${dry_run_prefix}Rendu de la stack CrowdSec..."
+    render_template "${TEMPLATE_DIR}/compose/crowdsec.yml" "${CROWDSEC_DIR}/docker-compose.yml"
+    render_template "${TEMPLATE_DIR}/crowdsec/acquis.yml" "${CROWDSEC_DIR}/acquis.yml"
+    render_template "${TEMPLATE_DIR}/crowdsec/profiles.yaml" "${CROWDSEC_DIR}/profiles.yaml"
+    if [ "${CROWDSEC_APPSEC_ENABLED}" = true ]; then
+      echo "${dry_run_prefix}Rendu de appsec.yaml..."
+      render_template "${TEMPLATE_DIR}/crowdsec/appsec.yaml" "${CROWDSEC_DIR}/appsec.yaml"
+    elif [ -f "${CROWDSEC_DIR}/appsec.yaml" ]; then
+      if [ "${DRY_RUN:-false}" = true ]; then
+        warn "[DRY-RUN] Suppression de ${CROWDSEC_DIR}/appsec.yaml"
+      else
+        rm -f "${CROWDSEC_DIR}/appsec.yaml"
+      fi
+    fi
     echo "${dry_run_prefix}Rendu de middleware-crowdsec.yml..."
     render_template "${TEMPLATE_DIR}/traefik/middleware-crowdsec.yml" "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml"
   elif [ -f "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml" ]; then
@@ -751,6 +773,239 @@ manage_crowdsec_console_status() {
   manage_crowdsec_cscli "console status" console status || { err "Impossible de lire le statut Console CrowdSec."; exit 1; }
 }
 
+manage_crowdsec_appsec_collections_declared() {
+  local collections="${CROWDSEC_APPSEC_COLLECTIONS:-}"
+  local collection rendered=""
+
+  for collection in $collections; do
+    case " $rendered " in
+      *" $collection "*) ;;
+      *) rendered="${rendered:+${rendered} }${collection}" ;;
+    esac
+  done
+  printf '%s' "$rendered"
+}
+
+manage_crowdsec_appsec_install_collections() {
+  local collection installed
+
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] Installation/vérification collections AppSec : $(manage_crowdsec_appsec_collections_declared)"
+    return 0
+  fi
+
+  if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+    warn "Docker Compose indisponible, les collections AppSec seront déclarées via COLLECTIONS au prochain démarrage."
+    return 0
+  fi
+  if ! docker ps --filter "name=crowdsec$" --format "{{.Names}}" 2>/dev/null | grep -q "crowdsec"; then
+    warn "Container CrowdSec arrêté ou absent, les collections AppSec seront déclarées via COLLECTIONS au prochain démarrage."
+    return 0
+  fi
+
+  for collection in $(manage_crowdsec_appsec_collections_declared); do
+    installed=false
+    if (cd "${CROWDSEC_DIR}" && docker compose exec -T crowdsec cscli collections list 2>/dev/null) | grep -q "$collection"; then
+      installed=true
+    fi
+    if [ "$installed" = true ]; then
+      ok "Collection AppSec déjà présente : ${collection}"
+    else
+      info "Installation collection AppSec : ${collection}"
+      (cd "${CROWDSEC_DIR}" && docker compose exec -T crowdsec cscli collections install "$collection") || {
+        err "Impossible d'installer la collection AppSec : ${collection}"
+        exit 1
+      }
+    fi
+  done
+}
+
+manage_crowdsec_appsec_restart_crowdsec() {
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] cd ${CROWDSEC_DIR} && docker compose up -d"
+    warn "[DRY-RUN] Vérification disponibilité CrowdSec"
+    return 0
+  fi
+  (cd "${CROWDSEC_DIR}" && docker compose up -d) || { err "Échec du redémarrage de CrowdSec."; exit 1; }
+  manage_wait_crowdsec_ready
+}
+
+manage_crowdsec_appsec_restart_traefik() {
+  if [ ! -f "${TRAEFIK_DIR}/docker-compose.yml" ]; then
+    warn "Stack Traefik absente, redémarrage ignoré."
+    return 0
+  fi
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] cd ${TRAEFIK_DIR} && docker compose up -d"
+    return 0
+  fi
+  (cd "${TRAEFIK_DIR}" && docker compose up -d) || { err "Échec du redémarrage de Traefik."; exit 1; }
+}
+
+manage_crowdsec_appsec_status() {
+  manage_crowdsec_require
+
+  echo "=== CrowdSec AppSec / WAF ==="
+  echo "Config ksf.env       : ${CROWDSEC_APPSEC_ENABLED}"
+  echo "AppSec listen addr   : ${CROWDSEC_APPSEC_LISTEN_ADDR}"
+  echo "AppSec host Traefik  : ${CROWDSEC_APPSEC_HOST}"
+  echo "Failure block        : ${CROWDSEC_APPSEC_FAILURE_BLOCK}"
+  echo "Unreachable block    : ${CROWDSEC_APPSEC_UNREACHABLE_BLOCK}"
+  echo "Collections attendues: $(manage_crowdsec_appsec_collections_declared)"
+  echo ""
+
+  if [ -f "${CROWDSEC_DIR}/appsec.yaml" ]; then
+    ok "appsec.yaml présent : ${CROWDSEC_DIR}/appsec.yaml"
+  else
+    warn "appsec.yaml absent"
+  fi
+
+  if [ -f "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml" ] && grep -q 'crowdsecAppsecEnabled: true' "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml" 2>/dev/null; then
+    ok "Middleware Traefik AppSec actif"
+  else
+    warn "Middleware Traefik AppSec inactif ou absent"
+  fi
+
+  if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+    warn "Docker Compose indisponible, statut runtime AppSec non vérifié."
+    return 0
+  fi
+
+  if docker ps --filter "name=crowdsec$" --format "{{.Names}}" 2>/dev/null | grep -q "crowdsec"; then
+    if (cd "${CROWDSEC_DIR}" && docker compose exec -T crowdsec sh -c 'ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null || true') | grep -q ':7422'; then
+      ok "CrowdSec écoute sur 7422 dans le conteneur"
+    else
+      warn "Écoute 7422 non vérifiée dans le conteneur CrowdSec"
+    fi
+    (cd "${CROWDSEC_DIR}" && docker compose exec -T crowdsec cscli collections list 2>/dev/null | grep -E 'appsec|virtual-patching|generic-rules') || warn "Collections AppSec installées non détectées."
+  else
+    warn "Container CrowdSec arrêté ou absent"
+  fi
+}
+
+manage_crowdsec_appsec_enable() {
+  manage_crowdsec_require
+
+  manage_update_ksf_env_value "CROWDSEC_APPSEC_ENABLED" "true"
+  CROWDSEC_APPSEC_ENABLED=true
+  manage_update_ksf_env_value "CROWDSEC_APPSEC_LISTEN_ADDR" "${CROWDSEC_APPSEC_LISTEN_ADDR}"
+  manage_update_ksf_env_value "CROWDSEC_APPSEC_HOST" "${CROWDSEC_APPSEC_HOST}"
+  manage_update_ksf_env_value "CROWDSEC_APPSEC_FAILURE_BLOCK" "${CROWDSEC_APPSEC_FAILURE_BLOCK}"
+  manage_update_ksf_env_value "CROWDSEC_APPSEC_UNREACHABLE_BLOCK" "${CROWDSEC_APPSEC_UNREACHABLE_BLOCK}"
+  manage_update_ksf_env_value "CROWDSEC_APPSEC_COLLECTIONS" "${CROWDSEC_APPSEC_COLLECTIONS}"
+
+  manage_render
+  manage_require_installation
+  CROWDSEC_APPSEC_ENABLED=true
+  manage_crowdsec_appsec_install_collections
+  manage_crowdsec_appsec_restart_crowdsec
+  manage_crowdsec_appsec_restart_traefik
+
+  echo ""
+  ok "CrowdSec AppSec/WAF activé."
+  echo "  AppSec host       : ${CROWDSEC_APPSEC_HOST}"
+  echo "  Failure block     : ${CROWDSEC_APPSEC_FAILURE_BLOCK}"
+  echo "  Unreachable block : ${CROWDSEC_APPSEC_UNREACHABLE_BLOCK}"
+  echo "  Collections       : $(manage_crowdsec_appsec_collections_declared)"
+}
+
+manage_crowdsec_appsec_disable() {
+  manage_crowdsec_require
+
+  manage_update_ksf_env_value "CROWDSEC_APPSEC_ENABLED" "false"
+  CROWDSEC_APPSEC_ENABLED=false
+  manage_render
+  manage_require_installation
+  CROWDSEC_APPSEC_ENABLED=false
+  manage_crowdsec_appsec_restart_crowdsec
+  manage_crowdsec_appsec_restart_traefik
+
+  ok "CrowdSec AppSec/WAF désactivé. CrowdSec log-based reste actif."
+}
+
+manage_crowdsec_appsec_metrics() {
+  manage_crowdsec_require
+
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] cd ${CROWDSEC_DIR} && docker compose exec -T crowdsec cscli metrics show appsec"
+    return 0
+  fi
+
+  local output=""
+  output=$(cd "${CROWDSEC_DIR}" && docker compose exec -T crowdsec cscli metrics show appsec 2>/dev/null || true)
+  if [ -z "$output" ]; then
+    warn "Aucune métrique AppSec disponible pour l'instant. Lancez un test ou attendez du trafic."
+    return 0
+  fi
+  printf '%s\n' "$output"
+}
+
+manage_crowdsec_appsec_detect_test_host() {
+  local f
+
+  if [ -n "${TRAEFIK_HOST:-}" ]; then
+    printf '%s' "${TRAEFIK_HOST}"
+    return 0
+  fi
+  for f in "${INSTALLED_DIR}"/*.env; do
+    [ -f "$f" ] || continue
+    APP_HOST=""
+    APP_LOCAL_ONLY=false
+    source "$f"
+    if [ "${APP_LOCAL_ONLY:-false}" != true ] && [ -n "${APP_HOST:-}" ]; then
+      printf '%s' "${APP_HOST}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+manage_crowdsec_appsec_test() {
+  manage_crowdsec_require
+
+  local host url status
+  if ! host="$(manage_crowdsec_appsec_detect_test_host)" || [ -z "$host" ]; then
+    warn "Aucune URL testable détectée. Lancez manuellement : curl -I https://<host>/.env"
+    return 0
+  fi
+  url="https://${host}/.env"
+
+  if ! command -v curl >/dev/null 2>&1; then
+    warn "curl indisponible. Lancez manuellement : curl -I ${url}"
+    return 0
+  fi
+  if [ "${DRY_RUN:-false}" = true ]; then
+    warn "[DRY-RUN] curl -k -I --max-time 10 ${url}"
+    return 0
+  fi
+
+  info "Test AppSec contrôlé : ${url}"
+  status=$(curl -k -I --max-time 10 -o /dev/null -s -w '%{http_code}' "$url" || true)
+  if [ "$status" = "403" ]; then
+    ok "AppSec bloque correctement le test (${status})."
+  else
+    warn "Résultat inattendu : HTTP ${status:-indisponible}. Attendu : 403 si AppSec bloque correctement."
+    warn "Commande manuelle : curl -I ${url}"
+  fi
+}
+
+manage_crowdsec_appsec() {
+  local subcommand="${1:-status}"
+
+  case "$subcommand" in
+    status) manage_crowdsec_appsec_status ;;
+    enable) manage_crowdsec_appsec_enable ;;
+    disable) manage_crowdsec_appsec_disable ;;
+    metrics) manage_crowdsec_appsec_metrics ;;
+    test) manage_crowdsec_appsec_test ;;
+    *)
+      err "Commande CrowdSec AppSec inconnue : ${subcommand:-<vide>}"
+      err "Commandes disponibles : status, enable, disable, metrics, test"
+      exit 1
+      ;;
+  esac
+}
+
 manage_crowdsec_restart() {
   manage_crowdsec_require
 
@@ -779,10 +1034,11 @@ manage_crowdsec() {
     flush-decisions) manage_crowdsec_flush_decisions ;;
     enroll) manage_crowdsec_enroll "$arg" ;;
     console-status) manage_crowdsec_console_status ;;
+    appsec) manage_crowdsec_appsec "$arg" ;;
     restart) manage_crowdsec_restart ;;
     *)
       err "Commande CrowdSec inconnue : ${subcommand:-<vide>}"
-      err "Commandes disponibles : status, logs, decisions, alerts, metrics, bouncers, ban, unban, flush-decisions, enroll, console-status, restart"
+      err "Commandes disponibles : status, logs, decisions, alerts, metrics, bouncers, ban, unban, flush-decisions, enroll, console-status, restart, appsec"
       exit 1
       ;;
   esac
@@ -1177,6 +1433,92 @@ manage_doctor() {
       ((warnings++)) || true
     elif [ -n "${TRAEFIK_TRUSTED_IPS:-}" ]; then
       _manage_check ok "Trusted IPs Traefik" "${TRAEFIK_TRUSTED_IPS}"
+    fi
+
+    if [ "${CROWDSEC_APPSEC_ENABLED:-false}" != true ]; then
+      _manage_check ok "CrowdSec AppSec" "inactif"
+    else
+      if [ -f "${CROWDSEC_DIR}/appsec.yaml" ]; then
+        if grep -q 'crowdsecurity/appsec-default' "${CROWDSEC_DIR}/appsec.yaml" 2>/dev/null && grep -q 'source: appsec' "${CROWDSEC_DIR}/appsec.yaml" 2>/dev/null && grep -q "listen_addr: ${CROWDSEC_APPSEC_LISTEN_ADDR}" "${CROWDSEC_DIR}/appsec.yaml" 2>/dev/null; then
+          _manage_check ok "CrowdSec AppSec acquisition" "appsec.yaml présent"
+        else
+          _manage_check err "CrowdSec AppSec acquisition" "appsec.yaml incomplet"
+          ((errors++)) || true
+        fi
+      else
+        _manage_check err "CrowdSec AppSec acquisition" "appsec.yaml absent"
+        ((errors++)) || true
+      fi
+
+      if [ -f "${CROWDSEC_DIR}/docker-compose.yml" ]; then
+        if grep -q './appsec.yaml:/etc/crowdsec/acquis.d/appsec.yaml:ro' "${CROWDSEC_DIR}/docker-compose.yml" 2>/dev/null; then
+          _manage_check ok "Montage AppSec" "/etc/crowdsec/acquis.d/appsec.yaml:ro"
+        else
+          _manage_check err "Montage AppSec" "Absent du compose CrowdSec"
+          ((errors++)) || true
+        fi
+        if grep -Eq '^[[:space:]]*-[[:space:]]*"?([0-9.]+:)?7422:7422' "${CROWDSEC_DIR}/docker-compose.yml" 2>/dev/null; then
+          _manage_check err "Port AppSec public" "7422 publié sur l'hôte"
+          ((errors++)) || true
+        else
+          _manage_check ok "Port AppSec public" "7422 non publié sur l'hôte"
+        fi
+        local missing_collection=false
+        local collection
+        for collection in $(manage_crowdsec_appsec_collections_declared); do
+          if ! grep -q "$collection" "${CROWDSEC_DIR}/docker-compose.yml" 2>/dev/null; then
+            missing_collection=true
+          fi
+        done
+        if [ "$missing_collection" = false ]; then
+          _manage_check ok "Collections AppSec déclarées" "$(manage_crowdsec_appsec_collections_declared)"
+        else
+          _manage_check warn "Collections AppSec déclarées" "compose CrowdSec incomplet"
+          ((warnings++)) || true
+        fi
+      fi
+
+      if [ -f "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml" ]; then
+        if grep -q 'crowdsecAppsecEnabled: true' "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml" 2>/dev/null && grep -q "crowdsecAppsecHost: \"${CROWDSEC_APPSEC_HOST}\"" "${TRAEFIK_DYNAMIC_DIR}/middleware-crowdsec.yml" 2>/dev/null; then
+          _manage_check ok "Middleware AppSec Traefik" "${CROWDSEC_APPSEC_HOST}"
+        else
+          _manage_check err "Middleware AppSec Traefik" "crowdsecAppsecEnabled/Host absent"
+          ((errors++)) || true
+        fi
+      fi
+
+      if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && docker ps --filter "name=crowdsec$" --format "{{.Names}}" 2>/dev/null | grep -q "crowdsec"; then
+        if (cd "${CROWDSEC_DIR}" && docker compose exec -T crowdsec cscli metrics show appsec >/dev/null 2>&1); then
+          _manage_check ok "Métriques AppSec" "cscli metrics show appsec exécutable"
+        else
+          _manage_check warn "Métriques AppSec" "Commande indisponible ou aucune métrique"
+          ((warnings++)) || true
+        fi
+        local missing_installed=false
+        for collection in $(manage_crowdsec_appsec_collections_declared); do
+          if ! (cd "${CROWDSEC_DIR}" && docker compose exec -T crowdsec cscli collections list 2>/dev/null) | grep -q "$collection"; then
+            missing_installed=true
+          fi
+        done
+        if [ "$missing_installed" = false ]; then
+          _manage_check ok "Collections AppSec installées" "Présentes dans CrowdSec"
+        else
+          _manage_check warn "Collections AppSec installées" "Non vérifiées ou absentes dans CrowdSec"
+          ((warnings++)) || true
+        fi
+      elif command -v docker >/dev/null 2>&1 && docker ps >/dev/null 2>&1; then
+        _manage_check warn "Runtime AppSec" "Container CrowdSec indisponible"
+        ((warnings++)) || true
+      fi
+
+      if command -v docker >/dev/null 2>&1 && docker ps --filter "name=traefik$" --format "{{.Names}}" 2>/dev/null | grep -q "traefik"; then
+        if docker exec traefik sh -c 'command -v nc >/dev/null 2>&1 && nc -z -w 3 crowdsec 7422' >/dev/null 2>&1; then
+          _manage_check ok "Port AppSec interne" "Traefik joint crowdsec:7422"
+        else
+          _manage_check warn "Port AppSec interne" "Test réseau non vérifié depuis Traefik"
+          ((warnings++)) || true
+        fi
+      fi
     fi
   fi
 

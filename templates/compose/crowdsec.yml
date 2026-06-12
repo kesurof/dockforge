@@ -7,13 +7,13 @@ services:
       - proxy
     environment:
       - "TZ=${TZ_VALUE}"
-      - "COLLECTIONS=crowdsecurity/traefik"
+      - "COLLECTIONS=${CROWDSEC_COLLECTIONS}"
       - "BOUNCER_KEY_TRAEFIK=${CROWDSEC_BOUNCER_KEY}"
     volumes:
       - "./config:/etc/crowdsec"
       - "./data:/var/lib/crowdsec/data"
       - "./acquis.yml:/etc/crowdsec/acquis.yaml:ro"
-      - "./profiles.yaml:/etc/crowdsec/profiles.yaml:ro"
+${CROWDSEC_APPSEC_VOLUME_BLOCK}      - "./profiles.yaml:/etc/crowdsec/profiles.yaml:ro"
       - "../traefik/logs:/var/log/traefik:ro"
 
 networks:

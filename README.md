@@ -174,6 +174,48 @@ Traefik utilise le plugin CrowdSec nommé `bouncer` et le mode `stream`. Les rou
 
 Si vos DNS Cloudflare sont en mode proxy, renseignez les CIDR Cloudflare via `--traefik-trusted-ips cloudflare` pendant l'installation, saisissez `cloudflare` dans le questionnaire, ou utilisez `./ksf.sh trusted-ips apply cloudflare` après installation. N'activez pas `forwardedHeaders.insecure=true` : sans trusted IPs correctes, CrowdSec peut voir et bannir les IP Cloudflare au lieu des vraies IP visiteurs.
 
+### AppSec / WAF
+
+CrowdSec classique analyse les logs Traefik et applique les décisions via le bouncer. CrowdSec AppSec/WAF inspecte aussi les requêtes HTTP en temps réel via une datasource AppSec interne avant qu'elles atteignent les services.
+
+AppSec est une option avancée. Elle n'est pas activée par défaut avec `--with-crowdsec` afin de garder l'installation CrowdSec simple et stable.
+
+Activation à l'installation :
+
+```bash
+./deploy.sh --with-traefik --with-crowdsec --with-appsec --force --yes
+```
+
+Activation après installation :
+
+```bash
+./ksf.sh crowdsec appsec enable
+```
+
+Désactivation :
+
+```bash
+./ksf.sh crowdsec appsec disable
+```
+
+Statut, métriques et test contrôlé :
+
+```bash
+./ksf.sh crowdsec appsec status
+./ksf.sh crowdsec appsec metrics
+./ksf.sh crowdsec appsec test
+```
+
+Test HTTP manuel :
+
+```bash
+curl -I https://<host>/.env
+```
+
+Le résultat attendu est `HTTP 403` si AppSec bloque correctement la requête. AppSec peut générer des faux positifs selon les applications exposées : surveillez les alertes et la Console CrowdSec après activation.
+
+Le port AppSec `7422` reste interne au réseau Docker entre Traefik et CrowdSec. Il ne doit pas être publié sur l'hôte ni exposé publiquement.
+
 Commandes utiles :
 
 ```bash
@@ -188,6 +230,11 @@ Commandes utiles :
 ./ksf.sh crowdsec flush-decisions
 ./ksf.sh crowdsec console-status
 ./ksf.sh crowdsec restart
+./ksf.sh crowdsec appsec status
+./ksf.sh crowdsec appsec enable
+./ksf.sh crowdsec appsec disable
+./ksf.sh crowdsec appsec metrics
+./ksf.sh crowdsec appsec test
 ./ksf.sh trusted-ips cloudflare
 ./ksf.sh trusted-ips apply cloudflare
 ```

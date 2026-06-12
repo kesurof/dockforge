@@ -7,7 +7,7 @@ http:
           crowdsecLapiHost: "crowdsec:8080"
           crowdsecLapiScheme: "http"
           crowdsecLapiKey: "${CROWDSEC_BOUNCER_KEY}"
-          crowdsecMode: "stream"
+          crowdsecMode: "stream"${CROWDSEC_APPSEC_PLUGIN_BLOCK}
 
     security-chain:
       chain:

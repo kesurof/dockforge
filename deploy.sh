@@ -43,6 +43,12 @@ OAUTH2_AUTHENTICATED_EMAILS_FILE=""
 OAUTH2_HOST=""
 OAUTH2_COOKIE_SECRET=""
 CROWDSEC_BOUNCER_KEY=""
+CROWDSEC_APPSEC_ENABLED=false
+CROWDSEC_APPSEC_LISTEN_ADDR="0.0.0.0:7422"
+CROWDSEC_APPSEC_HOST="crowdsec:7422"
+CROWDSEC_APPSEC_FAILURE_BLOCK=true
+CROWDSEC_APPSEC_UNREACHABLE_BLOCK=true
+CROWDSEC_APPSEC_COLLECTIONS="crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules"
 TRAEFIK_START_STATUS="inactif"
 OAUTH2_START_STATUS="inactif"
 CROWDSEC_START_STATUS="inactif"
@@ -62,6 +68,12 @@ TRAEFIK_TRUSTED_IPS_SET=false
 WITH_TRAEFIK_SET=false
 WITH_CROWDSEC_SET=false
 CROWDSEC_BOUNCER_KEY_SET=false
+CROWDSEC_APPSEC_ENABLED_SET=false
+CROWDSEC_APPSEC_LISTEN_ADDR_SET=false
+CROWDSEC_APPSEC_HOST_SET=false
+CROWDSEC_APPSEC_FAILURE_BLOCK_SET=false
+CROWDSEC_APPSEC_UNREACHABLE_BLOCK_SET=false
+CROWDSEC_APPSEC_COLLECTIONS_SET=false
 OAUTH2_ENABLED_SET=false
 OAUTH2_HOST_SET=false
 OAUTH2_CLIENT_ID_SET=false
@@ -91,6 +103,7 @@ Options:
   --traefik-trusted-ips CIDRS|cloudflare  Proxies CIDR de confiance pour X-Forwarded-For
   --with-traefik          Génère une stack Traefik
   --with-crowdsec         Génère CrowdSec et le middleware Traefik bouncer
+  --with-appsec           Active CrowdSec AppSec/WAF (implique --with-crowdsec et --with-traefik)
   --crowdsec-bouncer-key KEY  Clé bouncer Traefik CrowdSec (générée si absente)
   --oauth-client-id ID    GitHub OAuth Client ID
   --oauth-client-secret SEC  GitHub OAuth Client Secret
@@ -123,6 +136,7 @@ while [[ $# -gt 0 ]]; do
     --traefik-trusted-ips) TRAEFIK_TRUSTED_IPS="$2"; TRAEFIK_TRUSTED_IPS_SET=true; shift 2 ;;
     --with-traefik)   WITH_TRAEFIK=true; WITH_TRAEFIK_SET=true; shift ;;
     --with-crowdsec)  WITH_CROWDSEC=true; WITH_CROWDSEC_SET=true; WITH_TRAEFIK=true; WITH_TRAEFIK_SET=true; shift ;;
+    --with-appsec)    CROWDSEC_APPSEC_ENABLED=true; CROWDSEC_APPSEC_ENABLED_SET=true; WITH_CROWDSEC=true; WITH_CROWDSEC_SET=true; WITH_TRAEFIK=true; WITH_TRAEFIK_SET=true; shift ;;
     --crowdsec-bouncer-key) CROWDSEC_BOUNCER_KEY="$2"; CROWDSEC_BOUNCER_KEY_SET=true; WITH_CROWDSEC=true; WITH_CROWDSEC_SET=true; WITH_TRAEFIK=true; WITH_TRAEFIK_SET=true; shift 2 ;;
     --oauth-client-id)    OAUTH2_CLIENT_ID="$2"; OAUTH2_CLIENT_ID_SET=true; OAUTH2_ENABLED=true; OAUTH2_ENABLED_SET=true; shift 2 ;;
     --oauth-client-secret) OAUTH2_CLIENT_SECRET="$2"; OAUTH2_CLIENT_SECRET_SET=true; OAUTH2_ENABLED=true; OAUTH2_ENABLED_SET=true; shift 2 ;;
@@ -215,6 +229,26 @@ load_existing_deploy_config() {
         ;;
       CROWDSEC_BOUNCER_KEY)
         [ "${CROWDSEC_BOUNCER_KEY_SET}" = false ] && CROWDSEC_BOUNCER_KEY="${value}"
+        ;;
+      CROWDSEC_APPSEC_ENABLED)
+        if [ "${CROWDSEC_APPSEC_ENABLED_SET}" = false ] && [ "${TRAEFIK_ONLY_CLI}" = false ]; then
+          CROWDSEC_APPSEC_ENABLED="${value}"
+        fi
+        ;;
+      CROWDSEC_APPSEC_LISTEN_ADDR)
+        [ "${CROWDSEC_APPSEC_LISTEN_ADDR_SET}" = false ] && CROWDSEC_APPSEC_LISTEN_ADDR="${value}"
+        ;;
+      CROWDSEC_APPSEC_HOST)
+        [ "${CROWDSEC_APPSEC_HOST_SET}" = false ] && CROWDSEC_APPSEC_HOST="${value}"
+        ;;
+      CROWDSEC_APPSEC_FAILURE_BLOCK)
+        [ "${CROWDSEC_APPSEC_FAILURE_BLOCK_SET}" = false ] && CROWDSEC_APPSEC_FAILURE_BLOCK="${value}"
+        ;;
+      CROWDSEC_APPSEC_UNREACHABLE_BLOCK)
+        [ "${CROWDSEC_APPSEC_UNREACHABLE_BLOCK_SET}" = false ] && CROWDSEC_APPSEC_UNREACHABLE_BLOCK="${value}"
+        ;;
+      CROWDSEC_APPSEC_COLLECTIONS)
+        [ "${CROWDSEC_APPSEC_COLLECTIONS_SET}" = false ] && CROWDSEC_APPSEC_COLLECTIONS="${value}"
         ;;
       OAUTH2_ENABLED)
         if [ "${OAUTH2_ENABLED_SET}" = false ] && [ "${TRAEFIK_ONLY_CLI}" = false ]; then
@@ -532,6 +566,13 @@ configure_oauth2_authorization() {
 }
 
 prepare_deploy_config() {
+  if [ "$DRY_RUN" = true ] && [ "$AUTO_YES" = true ]; then
+    [ -n "$DOMAIN" ] || DOMAIN="example.com"
+    [ -n "$DOMAINS" ] || DOMAINS="$DOMAIN"
+    [ -n "$ACME_EMAIL" ] || ACME_EMAIL="admin@example.com"
+    [ -n "$CF_API_EMAIL" ] || CF_API_EMAIL="admin@example.com"
+    [ -n "$CF_API_KEY" ] || CF_API_KEY="dry-run-dummy"
+  fi
   if [ -z "$DNS_AUTO_CREATE" ]; then
     DNS_AUTO_CREATE=false
   fi
@@ -557,6 +598,10 @@ prepare_deploy_config() {
   fi
   if [ -z "$DNS_RECORD_PROXIED" ]; then
     DNS_RECORD_PROXIED=true
+  fi
+  if [ "$CROWDSEC_APPSEC_ENABLED" = true ]; then
+    WITH_CROWDSEC=true
+    WITH_TRAEFIK=true
   fi
   if [ "$WITH_CROWDSEC" = true ] && [ -z "$TRAEFIK_TRUSTED_IPS" ] && [ "$TRAEFIK_TRUSTED_IPS_SET" = false ]; then
     TRAEFIK_TRUSTED_IPS=cloudflare
@@ -614,6 +659,7 @@ prompt_deploy_questions() {
     ask_bool WITH_CROWDSEC "Activer CrowdSec pour Traefik"
     if [ "$WITH_CROWDSEC" = true ]; then
       WITH_TRAEFIK=true
+      ask_bool CROWDSEC_APPSEC_ENABLED "Activer CrowdSec AppSec / WAF"
       if [ -z "$TRAEFIK_TRUSTED_IPS" ] && [ "$TRAEFIK_TRUSTED_IPS_SET" = false ]; then
         echo "Trusted IPs Traefik : Cloudflare officiel sera appliqué automatiquement."
       else
@@ -660,8 +706,14 @@ show_deploy_plan() {
   echo "CrowdSec             : $(display_bool "${WITH_CROWDSEC}")"
   if [ "${WITH_CROWDSEC}" = true ]; then
     echo "CrowdSec bouncer key : $(display_secret_auto "${CROWDSEC_BOUNCER_KEY}")"
+    echo "CrowdSec AppSec/WAF  : $(display_bool "${CROWDSEC_APPSEC_ENABLED}")"
+    echo "AppSec host          : ${CROWDSEC_APPSEC_HOST}"
+    echo "AppSec failure block : ${CROWDSEC_APPSEC_FAILURE_BLOCK}"
+    echo "AppSec unreach block : ${CROWDSEC_APPSEC_UNREACHABLE_BLOCK}"
+    echo "AppSec collections   : ${CROWDSEC_APPSEC_COLLECTIONS}"
   else
     echo "CrowdSec bouncer key : $(display_secret "${CROWDSEC_BOUNCER_KEY}")"
+    echo "CrowdSec AppSec/WAF  : inactif"
   fi
   echo "OAuth2 Proxy         : $(display_bool "${OAUTH2_ENABLED}")"
   echo "Host OAuth2          : $(display_value "${OAUTH2_HOST}")"
@@ -784,6 +836,11 @@ validate_deploy_config() {
 
   if [ "$WITH_CROWDSEC" = true ] && [ "$WITH_TRAEFIK" = false ]; then
     err "CrowdSec nécessite --with-traefik pour générer le middleware Traefik."
+    return 1
+  fi
+
+  if [ "$CROWDSEC_APPSEC_ENABLED" = true ] && { [ "$WITH_CROWDSEC" != true ] || [ "$WITH_TRAEFIK" != true ]; }; then
+    err "CrowdSec AppSec/WAF nécessite CrowdSec et Traefik."
     return 1
   fi
 
@@ -911,6 +968,12 @@ WITH_TRAEFIK=${WITH_TRAEFIK}
 TRAEFIK_TRUSTED_IPS=${TRAEFIK_TRUSTED_IPS}
 WITH_CROWDSEC=${WITH_CROWDSEC}
 CROWDSEC_BOUNCER_KEY=${CROWDSEC_BOUNCER_KEY}
+CROWDSEC_APPSEC_ENABLED=${CROWDSEC_APPSEC_ENABLED}
+CROWDSEC_APPSEC_LISTEN_ADDR=${CROWDSEC_APPSEC_LISTEN_ADDR}
+CROWDSEC_APPSEC_HOST=${CROWDSEC_APPSEC_HOST}
+CROWDSEC_APPSEC_FAILURE_BLOCK=${CROWDSEC_APPSEC_FAILURE_BLOCK}
+CROWDSEC_APPSEC_UNREACHABLE_BLOCK=${CROWDSEC_APPSEC_UNREACHABLE_BLOCK}
+CROWDSEC_APPSEC_COLLECTIONS=${CROWDSEC_APPSEC_COLLECTIONS}
 OAUTH2_ENABLED=${OAUTH2_ENABLED}
 ACME_EMAIL=${ACME_EMAIL}
 TRAEFIK_HOST=${TRAEFIK_HOST}
@@ -948,6 +1011,9 @@ if [ "$OAUTH2_ENABLED" = true ]; then
 fi
 if [ "$WITH_CROWDSEC" = true ]; then
   info "CrowdSec: activé pour Traefik"
+  if [ "$CROWDSEC_APPSEC_ENABLED" = true ]; then
+    info "CrowdSec AppSec/WAF: activé (${CROWDSEC_APPSEC_HOST})"
+  fi
 fi
 
 step_dirs
@@ -980,6 +1046,15 @@ echo "Traefik          : $(display_bool "${WITH_TRAEFIK}")"
 echo "Host Traefik     : $(display_value "${TRAEFIK_HOST}")"
 echo "Trusted IPs      : $(display_value "${TRAEFIK_TRUSTED_IPS}" "aucune")"
 echo "CrowdSec         : $(display_bool "${WITH_CROWDSEC}")"
+if [ "${WITH_CROWDSEC}" = true ]; then
+  echo "CrowdSec AppSec/WAF : $(display_bool "${CROWDSEC_APPSEC_ENABLED}")"
+  echo "AppSec host      : ${CROWDSEC_APPSEC_HOST}"
+  echo "AppSec failure block : ${CROWDSEC_APPSEC_FAILURE_BLOCK}"
+  echo "AppSec unreachable block : ${CROWDSEC_APPSEC_UNREACHABLE_BLOCK}"
+  echo "AppSec collections : ${CROWDSEC_APPSEC_COLLECTIONS}"
+else
+  echo "CrowdSec AppSec/WAF : inactif"
+fi
 echo "OAuth2 Proxy     : $(display_bool "${OAUTH2_ENABLED}")"
 echo "Host OAuth2      : $(display_value "${OAUTH2_HOST}")"
 if [ "$OAUTH2_AUTH_MODE" = "email" ]; then

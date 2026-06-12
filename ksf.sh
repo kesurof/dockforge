@@ -33,7 +33,7 @@ Commandes :
   render                Régénérer les fichiers dynamiques Traefik
   restart               Relancer Traefik, OAuth2 Proxy et CrowdSec
   doctor                Diagnostic global de la plateforme
-  crowdsec <commande>   Gérer CrowdSec (status, logs, decisions, alerts, metrics, bouncers, ban, unban, flush-decisions, enroll, console-status, restart)
+  crowdsec <commande>   Gérer CrowdSec (status, logs, decisions, alerts, metrics, bouncers, ban, unban, flush-decisions, enroll, console-status, restart, appsec)
   trusted-ips cloudflare  Afficher les CIDR Cloudflare prêts pour TRAEFIK_TRUSTED_IPS
   trusted-ips apply cloudflare  Appliquer les CIDR Cloudflare et redémarrer Traefik
   clean-data [app]      Lister ou supprimer les données conservées
@@ -59,6 +59,8 @@ Exemples :
   $0 crowdsec unban 1.2.3.4
   $0 crowdsec console-status
   $0 crowdsec restart
+  $0 crowdsec appsec status
+  $0 crowdsec appsec enable
   $0 trusted-ips cloudflare
   $0 trusted-ips apply cloudflare
   $0 clean-data
@@ -82,7 +84,7 @@ while [[ $# -gt 0 ]]; do
             fi
             if [ -z "$CROWDSEC_ARG" ]; then
               case "$CROWDSEC_COMMAND" in
-                ban|unban|enroll)
+                ban|unban|enroll|appsec)
                   CROWDSEC_ARG="$1"
                   shift
                   continue
@@ -167,7 +169,7 @@ while [[ $# -gt 0 ]]; do
         shift
       elif [ "$COMMAND" = "crowdsec" ] && [ -z "$CROWDSEC_ARG" ]; then
         case "$CROWDSEC_COMMAND" in
-          ban|unban|enroll)
+          ban|unban|enroll|appsec)
             CROWDSEC_ARG="$1"
             shift
             ;;
