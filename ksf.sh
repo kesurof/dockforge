@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================
 # KSF — Gestion de l'infrastructure existante
-# Status, config, routes, render, restart, protect, doctor, clean-data, CrowdSec
+# Status, config, routes, render, restart, protect, doctor, clean-data, CrowdSec, trusted IPs
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -14,6 +14,7 @@ BASE_DIR="${HOME}/serverbox"
 COMMAND=""
 CLEAN_DATA_APP=""
 CROWDSEC_COMMAND=""
+TRUSTED_IPS_COMMAND=""
 DRY_RUN=false
 AUTO_YES=false
 
@@ -30,6 +31,7 @@ Commandes :
   restart               Relancer Traefik, OAuth2 Proxy et CrowdSec
   doctor                Diagnostic global de la plateforme
   crowdsec <commande>   Gérer CrowdSec (status, logs, decisions, restart)
+  trusted-ips cloudflare  Afficher les CIDR Cloudflare prêts pour TRAEFIK_TRUSTED_IPS
   clean-data [app]      Lister ou supprimer les données conservées
 
 Options :
@@ -50,6 +52,7 @@ Exemples :
   $0 crowdsec logs
   $0 crowdsec decisions
   $0 crowdsec restart
+  $0 trusted-ips cloudflare
   $0 clean-data
   $0 clean-data radarr
   $0 render --dry-run
@@ -58,8 +61,49 @@ EOF
 }
 
 while [[ $# -gt 0 ]]; do
+  if [ -n "$COMMAND" ]; then
+    case "$COMMAND" in
+      crowdsec)
+        case "$1" in
+          --base-dir|--dry-run|-y|--yes|-h|--help) ;;
+          *)
+            if [ -z "$CROWDSEC_COMMAND" ]; then
+              CROWDSEC_COMMAND="$1"
+              shift
+              continue
+            fi
+            ;;
+        esac
+        ;;
+      trusted-ips)
+        case "$1" in
+          --base-dir|--dry-run|-y|--yes|-h|--help) ;;
+          *)
+            if [ -z "$TRUSTED_IPS_COMMAND" ]; then
+              TRUSTED_IPS_COMMAND="$1"
+              shift
+              continue
+            fi
+            ;;
+        esac
+        ;;
+      clean-data)
+        case "$1" in
+          --base-dir|--dry-run|-y|--yes|-h|--help) ;;
+          *)
+            if [ -z "$CLEAN_DATA_APP" ]; then
+              CLEAN_DATA_APP="$1"
+              shift
+              continue
+            fi
+            ;;
+        esac
+        ;;
+    esac
+  fi
+
   case "$1" in
-    status|config|routes|protect|render|restart|doctor|clean-data|crowdsec)
+    status|config|routes|protect|render|restart|doctor|clean-data|crowdsec|trusted-ips)
       if [ -n "$COMMAND" ]; then
         err "Commande déjà définie : ${COMMAND}"
         exit 1
@@ -130,5 +174,8 @@ case "$COMMAND" in
     ;;
   crowdsec)
     manage_crowdsec "${CROWDSEC_COMMAND}"
+    ;;
+  trusted-ips)
+    manage_trusted_ips "${TRUSTED_IPS_COMMAND}"
     ;;
 esac

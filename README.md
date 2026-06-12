@@ -177,7 +177,10 @@ Commandes utiles :
 ./ksf.sh crowdsec logs
 ./ksf.sh crowdsec decisions
 ./ksf.sh crowdsec restart
+./ksf.sh trusted-ips cloudflare
 ```
+
+`./ksf.sh trusted-ips cloudflare` récupère les CIDR depuis la page officielle Cloudflare IP Ranges (`https://www.cloudflare.com/ips/`) et affiche une ligne `TRAEFIK_TRUSTED_IPS=...` prête à coller dans `ksf.env`. Si Cloudflare modifie ses plages IP, relancez cette commande, mettez à jour `ksf.env`, puis lancez `./ksf.sh render` et `./ksf.sh restart`.
 
 Pour désactiver CrowdSec, passez `WITH_CROWDSEC=false` dans `~/serverbox/config/ksf.env`, relancez `./ksf.sh render`, puis `./ksf.sh restart`. Vous pouvez ensuite arrêter la stack avec `cd ~/serverbox/proxy/crowdsec && docker compose down`. Les données locales restent dans `~/serverbox/proxy/crowdsec/`.
 

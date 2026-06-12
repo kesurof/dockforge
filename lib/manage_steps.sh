@@ -707,6 +707,57 @@ manage_crowdsec() {
   esac
 }
 
+# ---------- Trusted IPs ----------
+
+manage_trusted_ips_cloudflare() {
+  local source_url="https://www.cloudflare.com/ips/"
+  local ipv4_url="https://www.cloudflare.com/ips-v4"
+  local ipv6_url="https://www.cloudflare.com/ips-v6"
+  local ipv4_ranges ipv6_ranges ranges line joined=""
+
+  if ! command -v curl >/dev/null 2>&1; then
+    err "curl est requis pour récupérer les plages IP Cloudflare officielles."
+    err "Source officielle : ${source_url}"
+    exit 1
+  fi
+
+  ipv4_ranges=$(curl -fsSL --max-time 10 "${ipv4_url}") || {
+    err "Impossible de récupérer ${ipv4_url}"
+    err "Source officielle : ${source_url}"
+    exit 1
+  }
+  ipv6_ranges=$(curl -fsSL --max-time 10 "${ipv6_url}") || {
+    err "Impossible de récupérer ${ipv6_url}"
+    err "Source officielle : ${source_url}"
+    exit 1
+  }
+
+  ranges=$(printf '%s\n%s\n' "${ipv4_ranges}" "${ipv6_ranges}")
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "$line" ] && joined="${joined:+${joined},}${line}"
+  done <<< "$ranges"
+
+  echo "Source officielle : ${source_url}"
+  echo "Endpoints utilisés : ${ipv4_url} et ${ipv6_url}"
+  echo ""
+  echo "TRAEFIK_TRUSTED_IPS=${joined}"
+  echo ""
+  echo "Après mise à jour de ksf.env : ./ksf.sh render puis ./ksf.sh restart"
+}
+
+manage_trusted_ips() {
+  local subcommand="${1:-}"
+
+  case "$subcommand" in
+    cloudflare) manage_trusted_ips_cloudflare ;;
+    *)
+      err "Commande trusted-ips inconnue : ${subcommand:-<vide>}"
+      err "Commandes disponibles : cloudflare"
+      exit 1
+      ;;
+  esac
+}
+
 # ---------- Doctor ----------
 
 _manage_check() {
